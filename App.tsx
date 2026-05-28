@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Alert,
   Easing,
   Pressable,
   SafeAreaView,
@@ -13,15 +14,19 @@ import {
 } from "react-native";
 import { CHAPTERS_BY_SUBJECT, type SubjectId } from "./data/chapters";
 import {
+  deleteMetaValue,
+  getEventLogs,
+  getMetaValue,
   getAttempts,
-  getProgressByMatiere,
   getUserProfile,
   initDatabase,
+  logEvent,
   resetStatsForFirstUseIfNeeded,
   saveAttempt,
+  setMetaValue,
   updateXP,
   updateStreak,
-  type ChapterProgress,
+  type Attempt,
   type UserProfile,
 } from "./database/db";
 import {
@@ -134,6 +139,21 @@ type AnnalesItem =
       tolerance: number;
       unit: string;
     };
+
+type ExerciseCatalogEntry = {
+  subjectId: SubjectId;
+  difficulty: Difficulty;
+  label: string;
+  mode: "qcm" | "short" | "analysis" | "calcul" | "annales";
+};
+
+type MistakeRow = {
+  id: number;
+  exerciseId: number;
+  subjectId: SubjectId;
+  label: string;
+  createdAt: string;
+};
 
 const SUBJECTS: Subject[] = [
   { id: "maths", icon: "📐", name: "Mathématiques", color: "#4A90D9" },
@@ -415,6 +435,121 @@ const ANNALES_ITEMS: AnnalesItem[] = [
   },
 ];
 
+const SESSION_RESUME_KEY = "active_training_session_v1";
+const SUBJECT_LABEL_BY_ID: Record<SubjectId, string> = {
+  maths: "Mathématiques",
+  fr: "Français",
+  hg: "Histoire-Géo",
+  physique: "Physique-Chimie",
+  svt: "SVT",
+};
+
+const EXERCISE_CATALOG: Record<number, ExerciseCatalogEntry> = (() => {
+  const entries: Record<number, ExerciseCatalogEntry> = {};
+  for (const question of QCM_QUESTIONS) {
+    entries[question.id] = {
+      subjectId: question.matiere,
+      difficulty: question.difficulty,
+      label: question.enonce,
+      mode: "qcm",
+    };
+  }
+  for (const exercise of SHORT_ANSWER_EXERCISES) {
+    entries[exercise.id] = {
+      subjectId: exercise.matiere,
+      difficulty: exercise.difficulty,
+      label: exercise.title,
+      mode: "short",
+    };
+  }
+  for (const exercise of ANALYSIS_EXERCISES) {
+    entries[exercise.id] = {
+      subjectId: exercise.matiere,
+      difficulty: exercise.difficulty,
+      label: exercise.title,
+      mode: "analysis",
+    };
+  }
+  for (const item of ANNALES_ITEMS) {
+    entries[item.id] = {
+      subjectId: item.matiere,
+      difficulty: item.difficulty,
+      label: item.enonce,
+      mode: "annales",
+    };
+  }
+  entries[1001] = {
+    subjectId: "physique",
+    difficulty: 2,
+    label: "Calcul guidé vitesse",
+    mode: "calcul",
+  };
+  return entries;
+})();
+
+function getRecencyWeight(createdAt: string): number {
+  const date = new Date(createdAt).getTime();
+  if (Number.isNaN(date)) {
+    return 1;
+  }
+  const daysAgo = Math.max(0, (Date.now() - date) / 86_400_000);
+  return 0.65 + 0.35 * Math.exp(-daysAgo / 14);
+}
+
+function getDifficultyWeight(difficulty: Difficulty): number {
+  if (difficulty === 3) {
+    return 1.4;
+  }
+  if (difficulty === 2) {
+    return 1.2;
+  }
+  return 1;
+}
+
+function computeMasteryBySubject(attempts: Attempt[]): Record<SubjectId, number> {
+  const subjectIds: SubjectId[] = ["maths", "fr", "hg", "physique", "svt"];
+  const result: Record<SubjectId, number> = {
+    maths: 0,
+    fr: 0,
+    hg: 0,
+    physique: 0,
+    svt: 0,
+  };
+  for (const subjectId of subjectIds) {
+    let weightedTotal = 0;
+    let weightedCorrect = 0;
+    for (const attempt of attempts) {
+      const meta = EXERCISE_CATALOG[attempt.exercise_id];
+      if (!meta || meta.subjectId !== subjectId) {
+        continue;
+      }
+      const weight = getDifficultyWeight(meta.difficulty) * getRecencyWeight(attempt.created_at);
+      weightedTotal += weight;
+      if (attempt.is_correct === 1) {
+        weightedCorrect += weight;
+      }
+    }
+    result[subjectId] = weightedTotal ? Math.round((weightedCorrect / weightedTotal) * 100) : 0;
+  }
+  return result;
+}
+
+function getQcmCoachingHint(question: QcmQuestion): string {
+  if (question.matiere === "maths") {
+    return "Méthode: repère les données, applique la formule étape par étape, puis vérifie l'unité.";
+  }
+  if (question.matiere === "fr") {
+    return "Méthode: identifie d'abord la fonction grammaticale, puis valide avec la question du verbe.";
+  }
+  if (question.matiere === "hg") {
+    return "Méthode: place l'événement sur une frise mentale (avant/après) pour éliminer les pièges.";
+  }
+  if (question.matiere === "svt") {
+    return "Méthode: relie le mot-clé scientifique à sa fonction biologique avant de répondre.";
+  }
+  return "Méthode: liste formule + données + unité, puis contrôle la cohérence du résultat.";
+}
+
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -422,14 +557,6 @@ function startOfDay(date: Date): Date {
 function daysUntilBrevet(targetDate: Date): number {
   const diffMs = startOfDay(targetDate).getTime() - startOfDay(new Date()).getTime();
   return Math.max(0, Math.ceil(diffMs / 86_400_000));
-}
-
-function averageMastery(rows: ChapterProgress[]): number {
-  if (!rows.length) {
-    return 0;
-  }
-  const total = rows.reduce((sum, row) => sum + row.mastery_score, 0);
-  return Math.round(total / rows.length);
 }
 
 function normalizeAnswer(value: string): string {
@@ -503,6 +630,8 @@ export default function App() {
     useState<DefiSubjectFilter>("mixte");
   const [qcmSessionQuestions, setQcmSessionQuestions] =
     useState<QcmQuestion[]>(QCM_QUESTIONS.filter((q) => q.matiere === "maths"));
+  const [qcmRetryQueue, setQcmRetryQueue] = useState<QcmQuestion[]>([]);
+  const [qcmRetryRound, setQcmRetryRound] = useState(false);
 
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
@@ -547,6 +676,9 @@ export default function App() {
   const [annalesScore, setAnnalesScore] = useState(0);
   const [annalesXp, setAnnalesXp] = useState(0);
   const [annalesSessionItems, setAnnalesSessionItems] = useState<AnnalesItem[]>(ANNALES_ITEMS);
+  const [recentMistakes, setRecentMistakes] = useState<MistakeRow[]>([]);
+  const [eventStats, setEventStats] = useState<Record<string, number>>({});
+  const [resumeSuggestion, setResumeSuggestion] = useState<string | null>(null);
   const questionCardAnim = useRef(new Animated.Value(1)).current;
   const qcmFeedbackAnim = useRef(new Animated.Value(0)).current;
   const pulseButtonAnim = useRef(new Animated.Value(1)).current;
@@ -662,6 +794,73 @@ export default function App() {
     const attempts = await getAttempts();
     setTotalAttempts(attempts.length);
     setCorrectAttempts(attempts.filter((attempt) => attempt.is_correct === 1).length);
+    setProgressMap(computeMasteryBySubject(attempts));
+    setRecentMistakes(
+      attempts
+        .filter((attempt) => attempt.is_correct === 0)
+        .slice(0, 6)
+        .map((attempt) => {
+          const meta = EXERCISE_CATALOG[attempt.exercise_id];
+          return {
+            id: attempt.id,
+            exerciseId: attempt.exercise_id,
+            subjectId: meta?.subjectId ?? "maths",
+            label: meta?.label ?? `Exercice #${attempt.exercise_id}`,
+            createdAt: attempt.created_at,
+          };
+        })
+    );
+  }
+
+  async function refreshEventStats() {
+    const logs = await getEventLogs(400);
+    const summary = logs.reduce<Record<string, number>>((acc, log) => {
+      acc[log.event_name] = (acc[log.event_name] ?? 0) + 1;
+      return acc;
+    }, {});
+    setEventStats(summary);
+  }
+
+  async function saveSessionResume(mode: string, subjectId?: SubjectId) {
+    await setMetaValue(
+      SESSION_RESUME_KEY,
+      JSON.stringify({
+        mode,
+        subjectId: subjectId ?? null,
+        at: new Date().toISOString(),
+      })
+    );
+  }
+
+  async function clearSessionResume() {
+    await deleteMetaValue(SESSION_RESUME_KEY);
+  }
+
+  function confirmLeaveFlow() {
+    Alert.alert(
+      "Quitter l'entraînement ?",
+      "Ta progression en cours sera interrompue.",
+      [
+        { text: "Continuer", style: "cancel" },
+        {
+          text: "Quitter",
+          style: "destructive",
+          onPress: () => {
+            void logEvent("session_abandon", { view });
+            void clearSessionResume();
+            setResumeSuggestion(null);
+            setView("tabs");
+          },
+        },
+      ]
+    );
+  }
+
+  function completeSessionAndReturn(mode: string, payload?: Record<string, unknown>) {
+    void clearSessionResume();
+    setResumeSuggestion(null);
+    void logEvent("session_complete", { mode, ...(payload ?? {}) });
+    setView("tabs");
   }
 
   useEffect(() => {
@@ -673,24 +872,23 @@ export default function App() {
       }
       const user = await getUserProfile();
       setProfile(user);
-
-      const [maths, fr, hg, physique, svt] = await Promise.all([
-        getProgressByMatiere("Mathématiques"),
-        getProgressByMatiere("Français"),
-        getProgressByMatiere("Histoire-Géo"),
-        getProgressByMatiere("Physique-Chimie"),
-        getProgressByMatiere("SVT"),
-      ]);
-
-      setProgressMap({
-        maths: averageMastery(maths),
-        fr: averageMastery(fr),
-        hg: averageMastery(hg),
-        physique: averageMastery(physique),
-        svt: averageMastery(svt),
-      });
-
       await refreshAttemptStats();
+      await refreshEventStats();
+      const resumeRaw = await getMetaValue(SESSION_RESUME_KEY);
+      if (resumeRaw) {
+        try {
+          const parsed = JSON.parse(resumeRaw) as { mode?: string; subjectId?: SubjectId | null };
+          if (parsed.mode) {
+            setResumeSuggestion(
+              parsed.subjectId
+                ? `Reprendre ${parsed.mode} (${SUBJECT_LABEL_BY_ID[parsed.subjectId]})`
+                : `Reprendre ${parsed.mode}`
+            );
+          }
+        } catch {
+          setResumeSuggestion(null);
+        }
+      }
     }
 
     void bootstrap();
@@ -704,6 +902,43 @@ export default function App() {
   const selectedSubject = SUBJECTS.find((subject) => subject.id === selectedSubjectId);
   const selectedChapters = CHAPTERS_BY_SUBJECT[selectedSubjectId];
 
+  async function resumeLastSession() {
+    const resumeRaw = await getMetaValue(SESSION_RESUME_KEY);
+    if (!resumeRaw) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(resumeRaw) as { mode?: string; subjectId?: SubjectId | null };
+      const subjectId = parsed.subjectId ?? undefined;
+      if (!parsed.mode) {
+        return;
+      }
+      if (parsed.mode.toLowerCase().includes("qcm")) {
+        startQcm(subjectId);
+        return;
+      }
+      if (parsed.mode.toLowerCase().includes("calcul")) {
+        startCalcul();
+        return;
+      }
+      if (parsed.mode.toLowerCase().includes("réponse courte")) {
+        startShortAnswer(subjectId);
+        return;
+      }
+      if (parsed.mode.toLowerCase().includes("analyse")) {
+        startAnalysisDoc(subjectId);
+        return;
+      }
+      if (parsed.mode.toLowerCase().includes("expert")) {
+        startAnnalesExpertMode(subjectId);
+        return;
+      }
+      startAnnalesMode(subjectId);
+    } catch {
+      setResumeSuggestion(null);
+    }
+  }
+
   async function handleDemoXP() {
     const updated = await updateXP(10);
     setProfile(updated);
@@ -715,15 +950,38 @@ export default function App() {
   }
 
   function startQcm(subjectId?: SubjectId) {
-    const scopedQuestions = subjectId
+    const scopedQuestionsBase = subjectId
       ? QCM_QUESTIONS.filter((question) => question.matiere === subjectId)
       : QCM_QUESTIONS.filter((question) => question.matiere === "maths");
-    setQcmSessionQuestions(scopedQuestions.length ? scopedQuestions : QCM_QUESTIONS);
+    const scopedQuestions = scopedQuestionsBase.length ? scopedQuestionsBase : QCM_QUESTIONS;
+    const mistakes = recentMistakes
+      .filter((mistake) =>
+        scopedQuestions.some((question) => question.id === mistake.exerciseId)
+      )
+      .map((mistake) =>
+        scopedQuestions.find((question) => question.id === mistake.exerciseId)
+      )
+      .filter((value): value is QcmQuestion => Boolean(value));
+    const uniqueMistakes = Array.from(new Map(mistakes.map((q) => [q.id, q])).values());
+    const remainder = scopedQuestions.filter(
+      (question) => !uniqueMistakes.some((mistake) => mistake.id === question.id)
+    );
+    const orderedAdaptive = [...uniqueMistakes, ...remainder].sort(
+      (a, b) => b.difficulty - a.difficulty
+    );
+    setQcmSessionQuestions(orderedAdaptive);
+    setQcmRetryQueue([]);
+    setQcmRetryRound(false);
     setQuestionIndex(0);
     setSelectedChoice(null);
     setSessionCorrectCount(0);
     setSessionXpEarned(0);
     setView("qcm");
+    setResumeSuggestion(
+      `Reprendre QCM (${SUBJECT_LABEL_BY_ID[(subjectId ?? "maths") as SubjectId]})`
+    );
+    void saveSessionResume("QCM", subjectId);
+    void logEvent("session_start", { mode: "qcm", subjectId: subjectId ?? "maths" });
   }
 
   async function handleChooseAnswer(choice: string) {
@@ -742,6 +1000,12 @@ export default function App() {
       score: isCorrect ? points : 0,
     });
     await refreshAttemptStats();
+    await logEvent("answer_submitted", {
+      mode: "qcm",
+      exerciseId: question.id,
+      isCorrect,
+    });
+    await refreshEventStats();
 
     if (isCorrect) {
       triggerConfetti();
@@ -749,12 +1013,24 @@ export default function App() {
       setSessionXpEarned((value) => value + points);
       const updated = await updateXP(points);
       setProfile(updated);
+    } else {
+      setQcmRetryQueue((current) =>
+        current.some((queued) => queued.id === question.id) ? current : [...current, question]
+      );
     }
   }
 
   function nextQuestion() {
     if (questionIndex < qcmSessionQuestions.length - 1) {
       setQuestionIndex((value) => value + 1);
+      setSelectedChoice(null);
+      return;
+    }
+    if (!qcmRetryRound && qcmRetryQueue.length) {
+      setQcmSessionQuestions(qcmRetryQueue);
+      setQcmRetryRound(true);
+      setQcmRetryQueue([]);
+      setQuestionIndex(0);
       setSelectedChoice(null);
       return;
     }
@@ -765,6 +1041,13 @@ export default function App() {
     if (sessionCorrectCount === qcmSessionQuestions.length) {
       setPerfectSessions((value) => value + 1);
     }
+    void clearSessionResume();
+    void logEvent("session_complete", {
+      mode: "qcm",
+      score: sessionCorrectCount,
+      total: qcmSessionQuestions.length,
+      xp: sessionXpEarned,
+    });
     setView("tabs");
     setQuestionIndex(0);
     setSelectedChoice(null);
@@ -779,6 +1062,9 @@ export default function App() {
     setCalcCompleted(false);
     setCalcIsCorrect(false);
     setView("calcul");
+    setResumeSuggestion("Reprendre Calcul guidé");
+    void saveSessionResume("Calcul guidé", "physique");
+    void logEvent("session_start", { mode: "calcul" });
   }
 
   function goToStep2() {
@@ -820,6 +1106,12 @@ export default function App() {
       score: isCorrect ? points : 0,
     });
     await refreshAttemptStats();
+    await logEvent("answer_submitted", {
+      mode: "calcul",
+      exerciseId: 1001,
+      isCorrect,
+    });
+    await refreshEventStats();
 
     if (isCorrect) {
       triggerConfetti();
@@ -844,6 +1136,13 @@ export default function App() {
     setShortSubmitted(false);
     setShortWasCorrect(false);
     setView("short-answer");
+    setResumeSuggestion(
+      subjectId
+        ? `Reprendre Réponse courte (${SUBJECT_LABEL_BY_ID[subjectId]})`
+        : "Reprendre Réponse courte"
+    );
+    void saveSessionResume("Réponse courte", subjectId);
+    void logEvent("session_start", { mode: "short-answer", subjectId: subjectId ?? "mixte" });
   }
 
   async function submitShortAnswer() {
@@ -864,6 +1163,12 @@ export default function App() {
       score: isCorrect ? points : 0,
     });
     await refreshAttemptStats();
+    await logEvent("answer_submitted", {
+      mode: "short-answer",
+      exerciseId: exercise.id,
+      isCorrect,
+    });
+    await refreshEventStats();
 
     if (isCorrect) {
       triggerConfetti();
@@ -888,6 +1193,12 @@ export default function App() {
       setShortWasCorrect(false);
       return;
     }
+    void clearSessionResume();
+    void logEvent("session_complete", {
+      mode: "short-answer",
+      score: shortWasCorrect ? 1 : 0,
+      total: shortSessionExercises.length,
+    });
     setView("tabs");
   }
 
@@ -904,6 +1215,13 @@ export default function App() {
     setAnalysisSubmitted(false);
     setAnalysisWasCorrect(false);
     setView("analysis-doc");
+    setResumeSuggestion(
+      subjectId
+        ? `Reprendre Analyse document (${SUBJECT_LABEL_BY_ID[subjectId]})`
+        : "Reprendre Analyse document"
+    );
+    void saveSessionResume("Analyse document", subjectId);
+    void logEvent("session_start", { mode: "analysis-doc", subjectId: subjectId ?? "mixte" });
   }
 
   async function submitAnalysisAnswer() {
@@ -932,6 +1250,12 @@ export default function App() {
       score: isCorrect ? gainedPoints : 0,
     });
     await refreshAttemptStats();
+    await logEvent("answer_submitted", {
+      mode: "analysis-doc",
+      exerciseId: exercise.id,
+      isCorrect,
+    });
+    await refreshEventStats();
 
     if (isCorrect) {
       triggerConfetti();
@@ -952,6 +1276,12 @@ export default function App() {
       setAnalysisWasCorrect(false);
       return;
     }
+    void clearSessionResume();
+    void logEvent("session_complete", {
+      mode: "analysis-doc",
+      score: analysisWasCorrect ? 1 : 0,
+      total: analysisSessionExercises.length,
+    });
     setView("tabs");
   }
 
@@ -971,6 +1301,13 @@ export default function App() {
     setAnnalesScore(0);
     setAnnalesXp(0);
     setView("annales");
+    setResumeSuggestion(
+      subjectId
+        ? `Reprendre Annales mixte (${SUBJECT_LABEL_BY_ID[subjectId]})`
+        : "Reprendre Annales mixte"
+    );
+    void saveSessionResume("Annales mixte", subjectId);
+    void logEvent("session_start", { mode: "annales", level: "mixte", subjectId: subjectId ?? "mixte" });
   }
 
   function startAnnalesExpertMode(subjectId?: SubjectId) {
@@ -991,6 +1328,13 @@ export default function App() {
     setAnnalesScore(0);
     setAnnalesXp(0);
     setView("annales");
+    setResumeSuggestion(
+      subjectId
+        ? `Reprendre Annales expert (${SUBJECT_LABEL_BY_ID[subjectId]})`
+        : "Reprendre Annales expert"
+    );
+    void saveSessionResume("Annales expert", subjectId);
+    void logEvent("session_start", { mode: "annales", level: "expert", subjectId: subjectId ?? "mixte" });
   }
 
   async function submitAnnalesItem() {
@@ -1051,6 +1395,12 @@ export default function App() {
       score: isCorrect ? points : 0,
     });
     await refreshAttemptStats();
+    await logEvent("answer_submitted", {
+      mode: "annales",
+      exerciseId: item.id,
+      isCorrect,
+    });
+    await refreshEventStats();
 
     if (isCorrect) {
       triggerConfetti();
@@ -1079,6 +1429,13 @@ export default function App() {
     if (annalesScore === annalesSessionItems.length) {
       setPerfectSessions((value) => value + 1);
     }
+    void clearSessionResume();
+    void logEvent("session_complete", {
+      mode: "annales",
+      score: annalesScore,
+      total: annalesSessionItems.length,
+      xp: annalesXp,
+    });
     setAnnalesIndex(annalesSessionItems.length);
   }
 
@@ -1120,7 +1477,7 @@ export default function App() {
     return (
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.screenContent}>
-          <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+          <Pressable style={styles.secondaryButton} onPress={confirmLeaveFlow}>
             <Text style={styles.secondaryButtonText}>← Retour</Text>
           </Pressable>
           <Text style={styles.h1}>QCM • {subjectName}</Text>
@@ -1202,6 +1559,9 @@ export default function App() {
                 : "❌ Incorrect"}
             </Text>
             <Text style={styles.feedbackHint}>{question.explication}</Text>
+            {selectedChoice !== question.correctAnswer && (
+              <Text style={styles.feedbackHint}>{getQcmCoachingHint(question)}</Text>
+            )}
             <Pressable style={styles.feedbackButton} onPress={nextQuestion}>
               <Text style={styles.feedbackButtonText}>Continuer</Text>
             </Pressable>
@@ -1274,7 +1634,7 @@ export default function App() {
 
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
-        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+        <Pressable style={styles.secondaryButton} onPress={confirmLeaveFlow}>
           <Text style={styles.secondaryButtonText}>← Retour</Text>
         </Pressable>
         <Text style={styles.h1}>Calcul guidé ⚗️</Text>
@@ -1354,7 +1714,12 @@ export default function App() {
             <Text style={styles.feedbackHint}>
               Conclusion type: La vitesse moyenne de la voiture est de 75 km/h.
             </Text>
-            <Pressable style={styles.feedbackButton} onPress={() => setView("tabs")}>
+            <Pressable
+              style={styles.feedbackButton}
+              onPress={() =>
+                completeSessionAndReturn("calcul", { success: calcIsCorrect ? 1 : 0 })
+              }
+            >
               <Text style={styles.feedbackButtonText}>Retour à l'accueil</Text>
             </Pressable>
           </View>
@@ -1380,7 +1745,7 @@ export default function App() {
     }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
-        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+        <Pressable style={styles.secondaryButton} onPress={confirmLeaveFlow}>
           <Text style={styles.secondaryButtonText}>← Retour</Text>
         </Pressable>
         <Text style={styles.h1}>Réponse courte ✍️</Text>
@@ -1415,7 +1780,12 @@ export default function App() {
           <View style={styles.feedbackBar}>
             <Text style={styles.feedbackText}>{shortWasCorrect ? "✅ Valide" : "❌ A corriger"}</Text>
             <Text style={styles.feedbackHint}>{shortFeedback}</Text>
-            <Pressable style={styles.feedbackButton} onPress={() => setView("tabs")}>
+            <Pressable
+              style={styles.feedbackButton}
+              onPress={() =>
+                completeSessionAndReturn("short-answer", { success: shortWasCorrect ? 1 : 0 })
+              }
+            >
               <Text style={styles.feedbackButtonText}>Retour</Text>
             </Pressable>
           </View>
@@ -1441,7 +1811,7 @@ export default function App() {
     }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
-        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+        <Pressable style={styles.secondaryButton} onPress={confirmLeaveFlow}>
           <Text style={styles.secondaryButtonText}>← Retour</Text>
         </Pressable>
         <Text style={styles.h1}>Analyse de document 🧠</Text>
@@ -1481,7 +1851,14 @@ export default function App() {
               {analysisWasCorrect ? "✅ Analyse validee" : "❌ Analyse partielle"}
             </Text>
             <Text style={styles.feedbackHint}>{analysisFeedback}</Text>
-            <Pressable style={styles.feedbackButton} onPress={() => setView("tabs")}>
+            <Pressable
+              style={styles.feedbackButton}
+              onPress={() =>
+                completeSessionAndReturn("analysis-doc", {
+                  success: analysisWasCorrect ? 1 : 0,
+                })
+              }
+            >
               <Text style={styles.feedbackButtonText}>Retour</Text>
             </Pressable>
           </View>
@@ -1499,7 +1876,16 @@ export default function App() {
             Score: {annalesScore}/{annalesSessionItems.length}
           </Text>
           <Text style={styles.subtitle}>XP gagne: +{annalesXp}</Text>
-          <Pressable style={styles.primaryButton} onPress={() => setView("tabs")}>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() =>
+              completeSessionAndReturn("annales", {
+                score: annalesScore,
+                total: annalesSessionItems.length,
+                xp: annalesXp,
+              })
+            }
+          >
             <Text style={styles.primaryButtonText}>Terminer</Text>
           </Pressable>
         </View>
@@ -1510,7 +1896,7 @@ export default function App() {
 
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
-        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+        <Pressable style={styles.secondaryButton} onPress={confirmLeaveFlow}>
           <Text style={styles.secondaryButtonText}>← Retour</Text>
         </Pressable>
         <Text style={styles.h1}>Défi Annales 📚</Text>
@@ -1690,6 +2076,16 @@ export default function App() {
               </Pressable>
             ))}
           </View>
+
+          {resumeSuggestion && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Reprise intelligente</Text>
+              <Text style={styles.subtitle}>{resumeSuggestion}</Text>
+              <Pressable style={styles.primaryButton} onPress={() => void resumeLastSession()}>
+                <Text style={styles.primaryButtonText}>Reprendre maintenant</Text>
+              </Pressable>
+            </View>
+          )}
 
           <View style={styles.breviCard}>
             <Text style={styles.breviText}>🦉 {encouragement} 🏀</Text>
@@ -1877,6 +2273,35 @@ export default function App() {
             ) : (
               <Text style={styles.feedbackHint}>Aucun badge pour l'instant.</Text>
             )}
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Revoir mes erreurs</Text>
+            {recentMistakes.length ? (
+              recentMistakes.map((mistake) => (
+                <Text key={mistake.id} style={styles.feedbackHint}>
+                  {SUBJECT_LABEL_BY_ID[mistake.subjectId]} • {mistake.label}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.feedbackHint}>
+                Aucune erreur récente. Continue comme ça.
+              </Text>
+            )}
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Qualité d'apprentissage</Text>
+            <Text style={styles.feedbackHint}>
+              Sessions lancées: {eventStats.session_start ?? 0}
+            </Text>
+            <Text style={styles.feedbackHint}>
+              Réponses soumises: {eventStats.answer_submitted ?? 0}
+            </Text>
+            <Text style={styles.feedbackHint}>
+              Sessions terminées: {eventStats.session_complete ?? 0}
+            </Text>
+            <Text style={styles.feedbackHint}>
+              Sessions abandonnées: {eventStats.session_abandon ?? 0}
+            </Text>
           </View>
         </View>
       );

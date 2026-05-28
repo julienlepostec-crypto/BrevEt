@@ -40,21 +40,32 @@ type Attempt = {
   created_at: string;
 };
 
+type EventLog = {
+  id: number;
+  event_name: string;
+  payload: string | null;
+  created_at: string;
+};
+
 type InMemoryState = {
   initialized: boolean;
   first_use_reset_version_applied: number;
+  app_meta: Record<string, string>;
   user_profile: UserProfile[];
   exercises: Exercise[];
   attempts: Attempt[];
+  event_logs: EventLog[];
   chapter_progress: ChapterProgress[];
 };
 
 const memoryState: InMemoryState = {
   initialized: false,
   first_use_reset_version_applied: 0,
+  app_meta: {},
   user_profile: [],
   exercises: [],
   attempts: [],
+  event_logs: [],
   chapter_progress: [],
 };
 
@@ -176,6 +187,13 @@ async function initSqliteIfAvailable() {
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS event_logs (
+      id INTEGER PRIMARY KEY NOT NULL,
+      event_name TEXT NOT NULL,
+      payload TEXT,
+      created_at TEXT NOT NULL
     );
   `);
 
@@ -394,4 +412,81 @@ export async function getAttempts(): Promise<Attempt[]> {
   return [...memoryState.attempts].reverse();
 }
 
-export type { UserProfile, ChapterProgress, Exercise, Attempt };
+export async function getMetaValue(key: string): Promise<string | null> {
+  await initDatabase();
+  if (db) {
+    const row = db.getFirstSync(`SELECT value FROM app_meta WHERE key = ? LIMIT 1;`, [key]) as
+      | { value?: string }
+      | null;
+    return row?.value ?? null;
+  }
+  return memoryState.app_meta[key] ?? null;
+}
+
+export async function setMetaValue(key: string, value: string): Promise<void> {
+  await initDatabase();
+  if (db) {
+    db.runSync(
+      `
+      INSERT INTO app_meta (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+      `,
+      [key, value]
+    );
+    return;
+  }
+  memoryState.app_meta[key] = value;
+}
+
+export async function deleteMetaValue(key: string): Promise<void> {
+  await initDatabase();
+  if (db) {
+    db.runSync(`DELETE FROM app_meta WHERE key = ?;`, [key]);
+    return;
+  }
+  delete memoryState.app_meta[key];
+}
+
+export async function logEvent(event_name: string, payload?: Record<string, unknown>) {
+  await initDatabase();
+  const createdAt = new Date().toISOString();
+  const payloadText = payload ? JSON.stringify(payload) : null;
+
+  if (db) {
+    db.runSync(
+      `
+      INSERT INTO event_logs (event_name, payload, created_at)
+      VALUES (?, ?, ?);
+      `,
+      [event_name, payloadText, createdAt]
+    );
+    return;
+  }
+
+  memoryState.event_logs.push({
+    id: memoryState.event_logs.length + 1,
+    event_name,
+    payload: payloadText,
+    created_at: createdAt,
+  });
+}
+
+export async function getEventLogs(limit = 200): Promise<EventLog[]> {
+  await initDatabase();
+  if (db) {
+    const rows = db.getAllSync(
+      `
+      SELECT id, event_name, payload, created_at
+      FROM event_logs
+      ORDER BY id DESC
+      LIMIT ?;
+      `,
+      [limit]
+    );
+    return rows as EventLog[];
+  }
+  return [...memoryState.event_logs].reverse().slice(0, limit);
+}
+
+export type { UserProfile, ChapterProgress, Exercise, Attempt, EventLog };
