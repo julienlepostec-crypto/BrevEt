@@ -17,6 +17,7 @@ import {
   getProgressByMatiere,
   getUserProfile,
   initDatabase,
+  resetStatsForFirstUseIfNeeded,
   saveAttempt,
   updateXP,
   updateStreak,
@@ -666,6 +667,7 @@ export default function App() {
   useEffect(() => {
     async function bootstrap() {
       await initDatabase();
+      await resetStatsForFirstUseIfNeeded();
       await updateStreak();
       const user = await getUserProfile();
       setProfile(user);

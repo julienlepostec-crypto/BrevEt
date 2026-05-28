@@ -42,6 +42,7 @@ type Attempt = {
 
 type InMemoryState = {
   initialized: boolean;
+  first_use_reset_version_applied: number;
   user_profile: UserProfile[];
   exercises: Exercise[];
   attempts: Attempt[];
@@ -50,6 +51,7 @@ type InMemoryState = {
 
 const memoryState: InMemoryState = {
   initialized: false,
+  first_use_reset_version_applied: 0,
   user_profile: [],
   exercises: [],
   attempts: [],
@@ -66,6 +68,8 @@ try {
 }
 
 let db: any | null = null;
+const FIRST_USE_RESET_VERSION = 1;
+const FIRST_USE_RESET_META_KEY = "first_use_reset_version";
 
 function todayIsoDate(): string {
   return new Date().toISOString().split("T")[0];
@@ -168,6 +172,11 @@ async function initSqliteIfAvailable() {
       exercises_done INTEGER NOT NULL DEFAULT 0,
       last_reviewed TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
   `);
 
   const existingUser = db.getFirstSync(`SELECT id FROM user_profile LIMIT 1;`);
@@ -187,6 +196,73 @@ export async function initDatabase() {
   if (!db) {
     seedInMemoryData();
   }
+}
+
+export async function resetStatsForFirstUseIfNeeded(): Promise<boolean> {
+  await initDatabase();
+  const today = todayIsoDate();
+
+  if (db) {
+    const row = db.getFirstSync(
+      `SELECT value FROM app_meta WHERE key = ? LIMIT 1;`,
+      [FIRST_USE_RESET_META_KEY]
+    ) as { value?: string } | null;
+    const appliedVersion = Number(row?.value ?? 0);
+    if (appliedVersion >= FIRST_USE_RESET_VERSION) {
+      return false;
+    }
+
+    db.runSync(
+      `
+      UPDATE user_profile
+      SET xp_total = 0,
+          streak_count = 0,
+          level = 1,
+          last_activity_date = ?;
+      `,
+      [today]
+    );
+    db.runSync(`DELETE FROM attempts;`);
+    db.runSync(
+      `
+      UPDATE chapter_progress
+      SET mastery_score = 0,
+          exercises_done = 0,
+          last_reviewed = ?;
+      `,
+      [today]
+    );
+    db.runSync(
+      `
+      INSERT INTO app_meta (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+      `,
+      [FIRST_USE_RESET_META_KEY, String(FIRST_USE_RESET_VERSION)]
+    );
+    return true;
+  }
+
+  if (memoryState.first_use_reset_version_applied >= FIRST_USE_RESET_VERSION) {
+    return false;
+  }
+
+  const profile = memoryState.user_profile[0];
+  if (profile) {
+    profile.xp_total = 0;
+    profile.streak_count = 0;
+    profile.level = 1;
+    profile.last_activity_date = today;
+  }
+  memoryState.attempts = [];
+  memoryState.chapter_progress = memoryState.chapter_progress.map((chapter) => ({
+    ...chapter,
+    mastery_score: 0,
+    exercises_done: 0,
+    last_reviewed: today,
+  }));
+  memoryState.first_use_reset_version_applied = FIRST_USE_RESET_VERSION;
+  return true;
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
