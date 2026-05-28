@@ -918,6 +918,18 @@ export default function App() {
     setView("tabs");
   }
 
+  function handleTopBackPress() {
+    if (view === "matiere-detail") {
+      setView("tabs");
+      return;
+    }
+    if (view === "qcm" || view === "calcul" || view === "short-answer" || view === "analysis-doc" || view === "annales") {
+      confirmLeaveFlow();
+      return;
+    }
+    setView("tabs");
+  }
+
   useEffect(() => {
     async function bootstrap() {
       await initDatabase();
@@ -2390,6 +2402,13 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar style="light" />
       <View style={styles.content}>
+        {view !== "tabs" && (
+          <View style={styles.topNavBar}>
+            <Pressable style={styles.topNavBackButton} onPress={handleTopBackPress}>
+              <Text style={styles.topNavBackText}>← Retour</Text>
+            </Pressable>
+          </View>
+        )}
         <Animated.View
           style={[
             styles.contentInner,
@@ -2502,6 +2521,31 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#111111" },
   content: { flex: 1 },
+  topNavBar: {
+    width: "100%",
+    maxWidth: 980,
+    alignSelf: "center",
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 2,
+    zIndex: 40,
+  },
+  topNavBackButton: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "#FF7A00",
+    borderRadius: 12,
+    backgroundColor: "#101010",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  topNavBackText: {
+    color: "#FF7A00",
+    fontWeight: "800",
+    fontSize: 15,
+  },
   contentInner: {
     flex: 1,
     width: "100%",
