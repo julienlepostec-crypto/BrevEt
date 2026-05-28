@@ -686,6 +686,10 @@ export default function App() {
   const xpProgressAnim = useRef(new Animated.Value(0)).current;
   const xpShineAnim = useRef(new Animated.Value(-180)).current;
   const confettiAnim = useRef(new Animated.Value(0)).current;
+  const screenTransitionAnim = useRef(new Animated.Value(1)).current;
+  const streakPulseAnim = useRef(new Animated.Value(1)).current;
+  const activeTabPulseAnim = useRef(new Animated.Value(1)).current;
+  const successFlashAnim = useRef(new Animated.Value(0)).current;
   const [xpProgressDisplay, setXpProgressDisplay] = useState(0);
 
   const successRate = totalAttempts
@@ -710,9 +714,17 @@ export default function App() {
   function triggerConfetti() {
     confettiAnim.stopAnimation();
     confettiAnim.setValue(0);
+    successFlashAnim.stopAnimation();
+    successFlashAnim.setValue(0.18);
     Animated.timing(confettiAnim, {
       toValue: 1,
       duration: 850,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(successFlashAnim, {
+      toValue: 0,
+      duration: 420,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -790,6 +802,48 @@ export default function App() {
     pulseLoop.start();
     return () => pulseLoop.stop();
   }, [view, pulseButtonAnim]);
+
+  useEffect(() => {
+    screenTransitionAnim.setValue(0);
+    Animated.timing(screenTransitionAnim, {
+      toValue: 1,
+      duration: 230,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [view, activeTab, screenTransitionAnim]);
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+    streakPulseAnim.setValue(1);
+    Animated.sequence([
+      Animated.timing(streakPulseAnim, {
+        toValue: 1.07,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(streakPulseAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [profile?.xp_total, streakPulseAnim]);
+
+  useEffect(() => {
+    activeTabPulseAnim.setValue(0.96);
+    Animated.spring(activeTabPulseAnim, {
+      toValue: 1,
+      stiffness: 240,
+      damping: 16,
+      mass: 0.7,
+      useNativeDriver: true,
+    }).start();
+  }, [activeTab, activeTabPulseAnim]);
 
   async function refreshAttemptStats() {
     const attempts = await getAttempts();
@@ -2020,9 +2074,9 @@ export default function App() {
               <Text style={styles.h1}>BrevEt • Mode entraînement</Text>
               <Text style={styles.subtitle}>Salut {profile.prenom}, prêt à entrer sur le parquet ?</Text>
             </View>
-            <View style={styles.streakPill}>
+            <Animated.View style={[styles.streakPill, { transform: [{ scale: streakPulseAnim }] }]}>
               <Text style={styles.streakText}>🔥 {profile.streak_count}</Text>
-            </View>
+            </Animated.View>
           </View>
 
           <View style={styles.card}>
@@ -2336,7 +2390,28 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar style="light" />
       <View style={styles.content}>
-        <View style={styles.contentInner}>
+        <Animated.View
+          style={[
+            styles.contentInner,
+            {
+              opacity: screenTransitionAnim,
+              transform: [
+                {
+                  translateY: screenTransitionAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [8, 0],
+                  }),
+                },
+                {
+                  scale: screenTransitionAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.995, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           {view === "tabs" && renderScreen()}
           {view === "qcm" && renderQcmScreen()}
           {view === "matiere-detail" && renderMatiereDetail()}
@@ -2344,7 +2419,7 @@ export default function App() {
           {view === "short-answer" && renderShortAnswerScreen()}
           {view === "analysis-doc" && renderAnalysisDocScreen()}
           {view === "annales" && renderAnnalesScreen()}
-        </View>
+        </Animated.View>
       </View>
       {view === "tabs" && (
         <View style={styles.tabBar}>
@@ -2353,7 +2428,14 @@ export default function App() {
             return (
               <Pressable
                 key={item.key}
-                style={[styles.tabItem, active && styles.tabItemActive]}
+                style={({ pressed }) => [
+                  styles.tabItem,
+                  active && styles.tabItemActive,
+                  pressed && styles.tabItemPressed,
+                  {
+                    transform: [{ scale: pressed ? 0.96 : active ? activeTabPulseAnim : 1 }],
+                  },
+                ]}
                 onPress={() => setActiveTab(item.key)}
                 accessibilityRole="button"
                 accessibilityLabel={`Onglet ${item.label}`}
@@ -2367,6 +2449,7 @@ export default function App() {
           })}
         </View>
       )}
+      <Animated.View pointerEvents="none" style={[styles.successFlash, { opacity: successFlashAnim }]} />
       <View pointerEvents="none" style={styles.confettiLayer}>
         {CONFETTI_PARTICLES.map((particle, index) => (
           <Animated.Text
@@ -2583,6 +2666,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: 52,
   },
+  tabItemPressed: {
+    opacity: 0.86,
+  },
   tabItemActive: {
     backgroundColor: "#2A1806",
     borderWidth: 1,
@@ -2682,5 +2768,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 16,
     fontSize: 22,
+  },
+  successFlash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#FF7A00",
+    zIndex: 20,
   },
 });
