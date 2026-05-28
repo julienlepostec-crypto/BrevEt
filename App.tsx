@@ -29,6 +29,17 @@ import {
   getXPMultiplier,
 } from "./utils/gamification";
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const CONFETTI_PARTICLES = [
+  { left: "12%", drift: -26, emoji: "🏀" },
+  { left: "24%", drift: 14, emoji: "✨" },
+  { left: "36%", drift: -10, emoji: "🏀" },
+  { left: "48%", drift: 20, emoji: "🎉" },
+  { left: "60%", drift: -16, emoji: "✨" },
+  { left: "72%", drift: 12, emoji: "🏀" },
+  { left: "84%", drift: -22, emoji: "🎉" },
+] as const;
+
 type TabKey = "accueil" | "matieres" | "defis" | "progres" | "profil";
 type DefiSubjectFilter = SubjectId | "mixte";
 type AppView =
@@ -537,6 +548,11 @@ export default function App() {
   const [annalesSessionItems, setAnnalesSessionItems] = useState<AnnalesItem[]>(ANNALES_ITEMS);
   const questionCardAnim = useRef(new Animated.Value(1)).current;
   const qcmFeedbackAnim = useRef(new Animated.Value(0)).current;
+  const pulseButtonAnim = useRef(new Animated.Value(1)).current;
+  const xpProgressAnim = useRef(new Animated.Value(0)).current;
+  const xpShineAnim = useRef(new Animated.Value(-180)).current;
+  const confettiAnim = useRef(new Animated.Value(0)).current;
+  const [xpProgressDisplay, setXpProgressDisplay] = useState(0);
 
   const successRate = totalAttempts
     ? Math.round((correctAttempts / totalAttempts) * 100)
@@ -552,6 +568,21 @@ export default function App() {
     successRate,
     perfectSessions,
   });
+  const xPProgress = Math.min(
+    100,
+    Math.round(((profile?.xp_total ?? 0) / DAILY_XP_GOAL) * 100)
+  );
+
+  function triggerConfetti() {
+    confettiAnim.stopAnimation();
+    confettiAnim.setValue(0);
+    Animated.timing(confettiAnim, {
+      toValue: 1,
+      duration: 850,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }
 
   useEffect(() => {
     questionCardAnim.setValue(0.88);
@@ -574,6 +605,57 @@ export default function App() {
       }).start();
     }
   }, [selectedChoice, qcmFeedbackAnim]);
+
+  useEffect(() => {
+    const listenerId = xpProgressAnim.addListener(({ value }) => {
+      const clamped = Math.max(0, Math.min(100, value));
+      setXpProgressDisplay(clamped);
+    });
+    return () => {
+      xpProgressAnim.removeListener(listenerId);
+    };
+  }, [xpProgressAnim]);
+
+  useEffect(() => {
+    Animated.timing(xpProgressAnim, {
+      toValue: xPProgress,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    xpShineAnim.setValue(-180);
+    Animated.timing(xpShineAnim, {
+      toValue: 260,
+      duration: 520,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [xPProgress, xpProgressAnim, xpShineAnim]);
+
+  useEffect(() => {
+    if (view !== "tabs") {
+      pulseButtonAnim.setValue(1);
+      return;
+    }
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseButtonAnim, {
+          toValue: 1.03,
+          duration: 780,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseButtonAnim, {
+          toValue: 1,
+          duration: 780,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [view, pulseButtonAnim]);
 
   async function refreshAttemptStats() {
     const attempts = await getAttempts();
@@ -614,11 +696,6 @@ export default function App() {
     const dayOfMonth = new Date().getDate();
     return ENCOURAGEMENTS[dayOfMonth % ENCOURAGEMENTS.length];
   }, []);
-
-  const xPProgress = Math.min(
-    100,
-    Math.round(((profile?.xp_total ?? 0) / DAILY_XP_GOAL) * 100)
-  );
 
   const selectedSubject = SUBJECTS.find((subject) => subject.id === selectedSubjectId);
   const selectedChapters = CHAPTERS_BY_SUBJECT[selectedSubjectId];
@@ -663,6 +740,7 @@ export default function App() {
     await refreshAttemptStats();
 
     if (isCorrect) {
+      triggerConfetti();
       setSessionCorrectCount((value) => value + 1);
       setSessionXpEarned((value) => value + points);
       const updated = await updateXP(points);
@@ -740,6 +818,7 @@ export default function App() {
     await refreshAttemptStats();
 
     if (isCorrect) {
+      triggerConfetti();
       const updated = await updateXP(points);
       setProfile(updated);
     }
@@ -783,6 +862,7 @@ export default function App() {
     await refreshAttemptStats();
 
     if (isCorrect) {
+      triggerConfetti();
       const updated = await updateXP(points);
       setProfile(updated);
       setShortFeedback(`Bonne reponse. +${points} XP`);
@@ -850,6 +930,7 @@ export default function App() {
     await refreshAttemptStats();
 
     if (isCorrect) {
+      triggerConfetti();
       const updated = await updateXP(gainedPoints);
       setProfile(updated);
     }
@@ -968,6 +1049,7 @@ export default function App() {
     await refreshAttemptStats();
 
     if (isCorrect) {
+      triggerConfetti();
       const updated = await updateXP(points);
       setProfile(updated);
       setAnnalesScore((value) => value + 1);
@@ -1533,7 +1615,16 @@ export default function App() {
               Multiplicateur streak: x{xpMultiplier.toFixed(2)}
             </Text>
             <View style={styles.progressBg}>
-              <View style={[styles.progressFill, { width: `${xPProgress}%` }]} />
+              <View style={[styles.progressFill, { width: `${xpProgressDisplay}%` }]} />
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.progressShine,
+                  {
+                    transform: [{ translateX: xpShineAnim }],
+                  },
+                ]}
+              />
             </View>
             <Text style={styles.feedbackHint}>
               Progression niveau: {levelInfo.progress_percent}%
@@ -1546,9 +1637,12 @@ export default function App() {
                 ]}
               />
             </View>
-            <Pressable style={styles.primaryButton} onPress={handleDemoXP}>
+            <AnimatedPressable
+              style={[styles.primaryButton, { transform: [{ scale: pulseButtonAnim }] }]}
+              onPress={handleDemoXP}
+            >
               <Text style={styles.primaryButtonText}>+10 XP (démo)</Text>
-            </Pressable>
+            </AnimatedPressable>
             <Pressable
               style={styles.secondaryButton}
               onPress={() => startQcm("maths")}
@@ -1658,8 +1752,8 @@ export default function App() {
               </Pressable>
             ))}
           </View>
-          <Pressable
-            style={styles.primaryButton}
+          <AnimatedPressable
+            style={[styles.primaryButton, { transform: [{ scale: pulseButtonAnim }] }]}
             onPress={() =>
               startQcm(
                 defiSubjectFilter === "mixte"
@@ -1669,7 +1763,7 @@ export default function App() {
             }
           >
             <Text style={styles.primaryButtonText}>QCM du jour</Text>
-          </Pressable>
+          </AnimatedPressable>
           <Pressable style={styles.secondaryButton} onPress={startCalcul}>
             <Text style={styles.secondaryButtonText}>Calcul guidé</Text>
           </Pressable>
@@ -1693,8 +1787,8 @@ export default function App() {
           >
             <Text style={styles.secondaryButtonText}>Analyse de document</Text>
           </Pressable>
-          <Pressable
-            style={styles.primaryButton}
+          <AnimatedPressable
+            style={[styles.primaryButton, { transform: [{ scale: pulseButtonAnim }] }]}
             onPress={() =>
               startAnnalesMode(
                 defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
@@ -1702,9 +1796,9 @@ export default function App() {
             }
           >
             <Text style={styles.primaryButtonText}>Mini mode Annales (mixte)</Text>
-          </Pressable>
-          <Pressable
-            style={styles.primaryButton}
+          </AnimatedPressable>
+          <AnimatedPressable
+            style={[styles.primaryButton, { transform: [{ scale: pulseButtonAnim }] }]}
             onPress={() =>
               startAnnalesExpertMode(
                 defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
@@ -1712,7 +1806,7 @@ export default function App() {
             }
           >
             <Text style={styles.primaryButtonText}>Mode Expert Annales (difficile)</Text>
-          </Pressable>
+          </AnimatedPressable>
         </View>
       );
     }
@@ -1808,6 +1902,45 @@ export default function App() {
           })}
         </View>
       )}
+      <View pointerEvents="none" style={styles.confettiLayer}>
+        {CONFETTI_PARTICLES.map((particle, index) => (
+          <Animated.Text
+            key={`${particle.left}-${index}`}
+            style={[
+              styles.confettiParticle,
+              {
+                left: particle.left,
+                opacity: confettiAnim.interpolate({
+                  inputRange: [0, 0.08, 0.85, 1],
+                  outputRange: [0, 1, 1, 0],
+                }),
+                transform: [
+                  {
+                    translateY: confettiAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -(150 + index * 12)],
+                    }),
+                  },
+                  {
+                    translateX: confettiAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, particle.drift],
+                    }),
+                  },
+                  {
+                    scale: confettiAnim.interpolate({
+                      inputRange: [0, 0.25, 1],
+                      outputRange: [0.8, 1.15, 0.95],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {particle.emoji}
+          </Animated.Text>
+        ))}
+      </View>
     </SafeAreaView>
   );
 }
@@ -1868,11 +2001,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#2E323A",
     overflow: "hidden",
+    position: "relative",
   },
   progressFill: {
     height: "100%",
     borderRadius: 999,
     backgroundColor: "#FF7A00",
+  },
+  progressShine: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 42,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.26)",
   },
   primaryButton: {
     backgroundColor: "#FF7A00",
@@ -2048,5 +2190,16 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: "#111111",
+  },
+  confettiLayer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    paddingBottom: 72,
+    zIndex: 30,
+  },
+  confettiParticle: {
+    position: "absolute",
+    bottom: 16,
+    fontSize: 22,
   },
 });
