@@ -667,8 +667,10 @@ export default function App() {
   useEffect(() => {
     async function bootstrap() {
       await initDatabase();
-      await resetStatsForFirstUseIfNeeded();
-      await updateStreak();
+      const didResetForFirstUse = await resetStatsForFirstUseIfNeeded();
+      if (!didResetForFirstUse) {
+        await updateStreak();
+      }
       const user = await getUserProfile();
       setProfile(user);
 
@@ -1118,6 +1120,9 @@ export default function App() {
     return (
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.screenContent}>
+          <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+            <Text style={styles.secondaryButtonText}>← Retour</Text>
+          </Pressable>
           <Text style={styles.h1}>QCM • {subjectName}</Text>
           <Text style={styles.subtitle}>
             Question {questionIndex + 1}/{qcmSessionQuestions.length}
@@ -1269,6 +1274,9 @@ export default function App() {
 
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
+        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+          <Text style={styles.secondaryButtonText}>← Retour</Text>
+        </Pressable>
         <Text style={styles.h1}>Calcul guidé ⚗️</Text>
         <Text style={styles.subtitle}>
           Une voiture parcourt 150 km en 2 heures. Quelle est sa vitesse ?
@@ -1372,6 +1380,9 @@ export default function App() {
     }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
+        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+          <Text style={styles.secondaryButtonText}>← Retour</Text>
+        </Pressable>
         <Text style={styles.h1}>Réponse courte ✍️</Text>
         <Text style={styles.subtitle}>
           Exercice {shortIndex + 1}/{shortSessionExercises.length}
@@ -1430,6 +1441,9 @@ export default function App() {
     }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
+        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+          <Text style={styles.secondaryButtonText}>← Retour</Text>
+        </Pressable>
         <Text style={styles.h1}>Analyse de document 🧠</Text>
         <Text style={styles.subtitle}>
           Exercice {analysisIndex + 1}/{analysisSessionExercises.length}
@@ -1496,6 +1510,9 @@ export default function App() {
 
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
+        <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+          <Text style={styles.secondaryButtonText}>← Retour</Text>
+        </Pressable>
         <Text style={styles.h1}>Défi Annales 📚</Text>
         <Text style={styles.subtitle}>
           Sujet {item.year} • {annalesIndex + 1}/{annalesSessionItems.length}
@@ -1933,6 +1950,12 @@ export default function App() {
                     scale: confettiAnim.interpolate({
                       inputRange: [0, 0.25, 1],
                       outputRange: [0.8, 1.15, 0.95],
+                    }),
+                  },
+                  {
+                    rotate: confettiAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["0deg", `${particle.drift * 4}deg`],
                     }),
                   },
                 ],
