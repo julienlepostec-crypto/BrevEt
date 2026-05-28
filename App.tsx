@@ -4,6 +4,7 @@ import {
   Animated,
   Alert,
   Easing,
+  ImageBackground,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -171,6 +172,8 @@ type ThemePack = {
   muralTitle: string;
   muralHint: string;
   muralSymbols: string;
+  wallpaperUris: string[];
+  credits?: string;
 };
 
 const SUBJECTS: Subject[] = [
@@ -524,8 +527,14 @@ const THEME_PACKS: Record<ThemeId, ThemePack> = {
       buttonText: "#111111",
     },
     muralTitle: "Wall of Legends",
-    muralHint: "Version stylisée sans visages (silhouettes/licence-safe).",
+    muralHint: "Galerie privée des légendes NBA.",
     muralSymbols: "🏀 23 • 24 • 32 • 33 • 34 • 30",
+    wallpaperUris: [
+      "https://commons.wikimedia.org/wiki/Special:FilePath/Jordan_Lipofsky.jpg",
+      "https://commons.wikimedia.org/wiki/Special:FilePath/Kobe_Bryant_8.jpg",
+      "https://commons.wikimedia.org/wiki/Special:FilePath/LeBron_James_-_51959723161.jpg",
+    ],
+    credits: "Images Wikimedia Commons (usage privé)",
   },
   "minimal-dark": {
     id: "minimal-dark",
@@ -542,6 +551,7 @@ const THEME_PACKS: Record<ThemeId, ThemePack> = {
     muralTitle: "Focus Mode",
     muralHint: "Aucun bruit visuel, maximal concentration.",
     muralSymbols: "◼ ◻ ◼ ◻",
+    wallpaperUris: ["https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1600&q=80"],
   },
   "neon-court": {
     id: "neon-court",
@@ -558,6 +568,7 @@ const THEME_PACKS: Record<ThemeId, ThemePack> = {
     muralTitle: "Neon Arena",
     muralHint: "Ambiance night game, contraste élevé.",
     muralSymbols: "⚡ 🏀 ⚡ 🏀 ⚡",
+    wallpaperUris: ["https://images.unsplash.com/photo-1519861531473-9200262188bf?auto=format&fit=crop&w=1600&q=80"],
   },
 };
 
@@ -769,6 +780,14 @@ export default function App() {
   const successFlashAnim = useRef(new Animated.Value(0)).current;
   const [xpProgressDisplay, setXpProgressDisplay] = useState(0);
   const themePack = THEME_PACKS[themeId];
+  const wallpaperUri = useMemo(() => {
+    const list = themePack.wallpaperUris;
+    if (!list.length) {
+      return null;
+    }
+    const index = new Date().getDate() % list.length;
+    return list[index];
+  }, [themePack]);
 
   const successRate = totalAttempts
     ? Math.round((correctAttempts / totalAttempts) * 100)
@@ -2223,15 +2242,27 @@ export default function App() {
               },
             ]}
           >
-            <Text style={[styles.muralTitle, { color: themePack.palette.accent }]}>
-              {themePack.muralTitle}
-            </Text>
-            <Text style={[styles.muralHint, { color: themePack.palette.subText }]}>
-              {themePack.muralHint}
-            </Text>
-            <Text style={[styles.muralSymbols, { color: themePack.palette.text }]}>
-              {themePack.muralSymbols}
-            </Text>
+            <ImageBackground
+              source={wallpaperUri ? { uri: wallpaperUri } : undefined}
+              resizeMode="cover"
+              style={styles.muralBackground}
+              imageStyle={styles.muralBackgroundImage}
+            >
+              <View style={styles.muralOverlay}>
+                <Text style={[styles.muralTitle, { color: themePack.palette.accent }]}>
+                  {themePack.muralTitle}
+                </Text>
+                <Text style={[styles.muralHint, { color: themePack.palette.subText }]}>
+                  {themePack.muralHint}
+                </Text>
+                <Text style={[styles.muralSymbols, { color: themePack.palette.text }]}>
+                  {themePack.muralSymbols}
+                </Text>
+                {themePack.credits ? (
+                  <Text style={styles.muralCredits}>{themePack.credits}</Text>
+                ) : null}
+              </View>
+            </ImageBackground>
           </View>
           <View style={styles.rowBetween}>
             <View>
@@ -2841,8 +2872,20 @@ const styles = StyleSheet.create({
   muralCard: {
     borderRadius: 20,
     borderWidth: 1,
+    overflow: "hidden",
+  },
+  muralBackground: {
+    width: "100%",
+    minHeight: 150,
+    justifyContent: "flex-end",
+  },
+  muralBackgroundImage: {
+    opacity: 0.78,
+  },
+  muralOverlay: {
     padding: 14,
     gap: 6,
+    backgroundColor: "rgba(8,10,12,0.42)",
   },
   muralTitle: {
     fontSize: 18,
@@ -2856,6 +2899,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.4,
+  },
+  muralCredits: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#A6B2C3",
+    fontWeight: "600",
   },
   contentInner: {
     flex: 1,
