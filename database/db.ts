@@ -68,7 +68,7 @@ try {
 }
 
 let db: any | null = null;
-const FIRST_USE_RESET_VERSION = 1;
+const FIRST_USE_RESET_VERSION = 2;
 const FIRST_USE_RESET_META_KEY = "first_use_reset_version";
 
 function todayIsoDate(): string {
