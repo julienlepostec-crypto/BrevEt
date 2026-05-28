@@ -436,6 +436,7 @@ const ANNALES_ITEMS: AnnalesItem[] = [
 ];
 
 const SESSION_RESUME_KEY = "active_training_session_v1";
+const INPUT_PLACEHOLDER_COLOR = "#8F98AB";
 const SUBJECT_LABEL_BY_ID: Record<SubjectId, string> = {
   maths: "Mathématiques",
   fr: "Français",
@@ -1671,6 +1672,8 @@ export default function App() {
               onChangeText={setDistanceValue}
               keyboardType="numeric"
               placeholder="Distance (km)"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+              keyboardAppearance="dark"
             />
             <TextInput
               style={styles.input}
@@ -1678,6 +1681,8 @@ export default function App() {
               onChangeText={setTimeValue}
               keyboardType="numeric"
               placeholder="Temps (h)"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+              keyboardAppearance="dark"
             />
             <Pressable style={styles.primaryButton} onPress={goToStep3}>
               <Text style={styles.primaryButtonText}>Calculer</Text>
@@ -1694,6 +1699,8 @@ export default function App() {
               onChangeText={setConclusionText}
               multiline
               placeholder="La vitesse est de..."
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+              keyboardAppearance="dark"
             />
             <Pressable style={styles.primaryButton} onPress={() => void validateCalculation()}>
               <Text style={styles.primaryButtonText}>Valider (20 pts)</Text>
@@ -1765,6 +1772,8 @@ export default function App() {
             onChangeText={setShortAnswerText}
             editable={!shortSubmitted}
             placeholder="Ecris une reponse courte"
+            placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+            keyboardAppearance="dark"
           />
           {!shortSubmitted ? (
             <Pressable style={styles.primaryButton} onPress={() => void submitShortAnswer()}>
@@ -1834,6 +1843,8 @@ export default function App() {
             editable={!analysisSubmitted}
             multiline
             placeholder="Redige ton analyse"
+            placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+            keyboardAppearance="dark"
           />
           {!analysisSubmitted ? (
             <Pressable style={styles.primaryButton} onPress={() => void submitAnalysisAnswer()}>
@@ -1933,6 +1944,8 @@ export default function App() {
               editable={!annalesSubmitted}
               multiline={item.mode === "analysis"}
               placeholder="Entre ta reponse"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+              keyboardAppearance="dark"
             />
           )}
 
@@ -1951,6 +1964,8 @@ export default function App() {
                 onChangeText={setAnnalesFormulaInput}
                 editable={!annalesSubmitted}
                 placeholder="Formule utilisee"
+                placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                keyboardAppearance="dark"
               />
               <TextInput
                 style={styles.input}
@@ -1959,6 +1974,8 @@ export default function App() {
                 editable={!annalesSubmitted}
                 keyboardType="numeric"
                 placeholder={`Resultat (${item.unit})`}
+                placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                keyboardAppearance="dark"
               />
             </View>
           )}
@@ -2338,6 +2355,10 @@ export default function App() {
                 key={item.key}
                 style={[styles.tabItem, active && styles.tabItemActive]}
                 onPress={() => setActiveTab(item.key)}
+                accessibilityRole="button"
+                accessibilityLabel={`Onglet ${item.label}`}
+                accessibilityState={{ selected: active }}
+                hitSlop={8}
               >
                 <Text style={[styles.tabIcon, active && styles.tabIconActive]}>{item.icon}</Text>
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.label}</Text>
@@ -2401,10 +2422,10 @@ const styles = StyleSheet.create({
   contentInner: {
     flex: 1,
     width: "100%",
-    maxWidth: 920,
+    maxWidth: 980,
     alignSelf: "center",
   },
-  screenContent: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, gap: 14 },
+  screenContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 34, gap: 16 },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -2413,8 +2434,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: { fontSize: 16, color: "#D0D4DE" },
-  h1: { fontSize: 28, fontWeight: "800", color: "#FF7A00" },
-  subtitle: { fontSize: 15, color: "#D8DCE6", lineHeight: 20 },
+  h1: { fontSize: 30, fontWeight: "800", color: "#FF7A00", lineHeight: 36 },
+  subtitle: { fontSize: 15, color: "#E2E6EE", lineHeight: 22 },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2432,8 +2453,8 @@ const styles = StyleSheet.create({
   streakText: { fontWeight: "800", color: "#FF7A00" },
   card: {
     backgroundColor: "#171717",
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
     borderColor: "#2B2B2B",
     shadowColor: "#000000",
@@ -2441,9 +2462,9 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 3,
-    gap: 10,
+    gap: 12,
   },
-  cardTitle: { fontSize: 16, fontWeight: "800", color: "#F8F5EF" },
+  cardTitle: { fontSize: 17, fontWeight: "800", color: "#F8F5EF" },
   valueText: { fontSize: 14, color: "#ECEFF5", fontWeight: "700" },
   progressBg: {
     width: "100%",
@@ -2471,7 +2492,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: "flex-start",
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 46,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: "#FF9A3E",
     shadowColor: "#000000",
@@ -2487,7 +2510,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: "flex-start",
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 46,
+    justifyContent: "center",
     backgroundColor: "#101010",
   },
   secondaryButtonText: { color: "#FF7A00", fontWeight: "800" },
@@ -2555,7 +2580,8 @@ const styles = StyleSheet.create({
     gap: 3,
     marginHorizontal: 6,
     borderRadius: 999,
-    paddingVertical: 6,
+    paddingVertical: 10,
+    minHeight: 52,
   },
   tabItemActive: {
     backgroundColor: "#2A1806",
@@ -2571,7 +2597,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#3A3A3A",
     backgroundColor: "#151515",
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 50,
+    justifyContent: "center",
     marginTop: 8,
   },
   choiceDefault: { backgroundColor: "#151515" },
@@ -2583,7 +2612,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#351E1E",
     borderColor: "#E5383B",
   },
-  choiceText: { color: "#F8F5EF", fontWeight: "600" },
+  choiceText: { color: "#F8F5EF", fontWeight: "600", fontSize: 15, lineHeight: 21 },
   feedbackBar: {
     borderTopWidth: 1,
     borderTopColor: "#2A2A2A",
@@ -2592,7 +2621,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   feedbackText: { fontSize: 16, fontWeight: "800", color: "#FF7A00" },
-  feedbackHint: { fontSize: 14, color: "#D8DCE6", lineHeight: 20 },
+  feedbackHint: { fontSize: 15, color: "#E2E6EE", lineHeight: 22 },
   feedbackButton: {
     marginTop: 4,
     backgroundColor: "#FF7A00",
@@ -2606,9 +2635,11 @@ const styles = StyleSheet.create({
     borderColor: "#3A3A3A",
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 48,
     backgroundColor: "#101010",
     color: "#F8F5EF",
+    fontSize: 16,
   },
   textArea: {
     minHeight: 100,
