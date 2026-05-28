@@ -30,6 +30,7 @@ import {
 } from "./utils/gamification";
 
 type TabKey = "accueil" | "matieres" | "defis" | "progres" | "profil";
+type DefiSubjectFilter = SubjectId | "mixte";
 type AppView =
   | "tabs"
   | "qcm"
@@ -49,6 +50,7 @@ type Subject = {
 
 type QcmQuestion = {
   id: number;
+  matiere: SubjectId;
   enonce: string;
   choices: string[];
   correctAnswer: string;
@@ -149,6 +151,7 @@ const DAILY_XP_GOAL = 100;
 const QCM_QUESTIONS: QcmQuestion[] = [
   {
     id: 1,
+    matiere: "maths",
     enonce: "Dans un triangle rectangle, quel côté est l'hypoténuse ?",
     choices: [
       "Le côté opposé à l'angle droit",
@@ -163,6 +166,7 @@ const QCM_QUESTIONS: QcmQuestion[] = [
   },
   {
     id: 2,
+    matiere: "maths",
     enonce:
       "Triangle rectangle avec côtés 3 cm et 4 cm. L'hypoténuse mesure :",
     choices: ["5 cm", "6 cm", "7 cm", "4.5 cm"],
@@ -172,6 +176,7 @@ const QCM_QUESTIONS: QcmQuestion[] = [
   },
   {
     id: 3,
+    matiere: "maths",
     enonce:
       "Si AB² = AC² + BC², que peut-on conclure pour le triangle ABC ?",
     choices: [
@@ -187,6 +192,7 @@ const QCM_QUESTIONS: QcmQuestion[] = [
   },
   {
     id: 4,
+    matiere: "maths",
     enonce:
       "Un triangle rectangle a pour hypoténuse 13 et un côté 5. L'autre côté vaut :",
     choices: ["12", "10", "8", "18"],
@@ -196,11 +202,48 @@ const QCM_QUESTIONS: QcmQuestion[] = [
   },
   {
     id: 5,
+    matiere: "maths",
     enonce: "Lequel de ces triplets est pythagoricien ?",
     choices: ["6, 8, 10", "2, 3, 4", "4, 5, 6", "5, 5, 8"],
     correctAnswer: "6, 8, 10",
     explication: "6² + 8² = 36 + 64 = 100 = 10².",
     difficulty: 3,
+  },
+  {
+    id: 6,
+    matiere: "fr",
+    enonce: "Dans « Nous lisons un roman », quel est le COD ?",
+    choices: ["Nous", "lisons", "un roman", "aucun"],
+    correctAnswer: "un roman",
+    explication: "Le COD complète directement le verbe « lisons » : « un roman ».",
+    difficulty: 1,
+  },
+  {
+    id: 7,
+    matiere: "hg",
+    enonce: "La Première Guerre mondiale commence en :",
+    choices: ["1905", "1914", "1918", "1939"],
+    correctAnswer: "1914",
+    explication: "La guerre débute en 1914 et se termine en 1918.",
+    difficulty: 1,
+  },
+  {
+    id: 8,
+    matiere: "svt",
+    enonce: "L'ADN est principalement localisé dans :",
+    choices: ["Le noyau", "Le cytoplasme", "La membrane", "Les côtes"],
+    correctAnswer: "Le noyau",
+    explication: "Au collège, on retient que l'ADN est dans le noyau des cellules.",
+    difficulty: 2,
+  },
+  {
+    id: 9,
+    matiere: "physique",
+    enonce: "La formule de la vitesse moyenne est :",
+    choices: ["v = d / t", "v = d × t", "v = t / d", "v = d + t"],
+    correctAnswer: "v = d / t",
+    explication: "La vitesse moyenne est distance divisée par le temps.",
+    difficulty: 1,
   },
 ];
 
@@ -444,6 +487,10 @@ export default function App() {
   });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<SubjectId>("maths");
+  const [defiSubjectFilter, setDefiSubjectFilter] =
+    useState<DefiSubjectFilter>("mixte");
+  const [qcmSessionQuestions, setQcmSessionQuestions] =
+    useState<QcmQuestion[]>(QCM_QUESTIONS.filter((q) => q.matiere === "maths"));
 
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
@@ -462,12 +509,16 @@ export default function App() {
   const [calcIsCorrect, setCalcIsCorrect] = useState(false);
 
   const [shortIndex, setShortIndex] = useState(0);
+  const [shortSessionExercises, setShortSessionExercises] =
+    useState<ShortAnswerExercise[]>(SHORT_ANSWER_EXERCISES);
   const [shortAnswerText, setShortAnswerText] = useState("");
   const [shortFeedback, setShortFeedback] = useState<string | null>(null);
   const [shortSubmitted, setShortSubmitted] = useState(false);
   const [shortWasCorrect, setShortWasCorrect] = useState(false);
 
   const [analysisIndex, setAnalysisIndex] = useState(0);
+  const [analysisSessionExercises, setAnalysisSessionExercises] =
+    useState<AnalysisExercise[]>(ANALYSIS_EXERCISES);
   const [analysisAnswerText, setAnalysisAnswerText] = useState("");
   const [analysisFeedback, setAnalysisFeedback] = useState<string | null>(null);
   const [analysisSubmitted, setAnalysisSubmitted] = useState(false);
@@ -582,7 +633,11 @@ export default function App() {
     setView("matiere-detail");
   }
 
-  function startQcm() {
+  function startQcm(subjectId?: SubjectId) {
+    const scopedQuestions = subjectId
+      ? QCM_QUESTIONS.filter((question) => question.matiere === subjectId)
+      : QCM_QUESTIONS.filter((question) => question.matiere === "maths");
+    setQcmSessionQuestions(scopedQuestions.length ? scopedQuestions : QCM_QUESTIONS);
     setQuestionIndex(0);
     setSelectedChoice(null);
     setSessionCorrectCount(0);
@@ -594,7 +649,7 @@ export default function App() {
     if (selectedChoice) {
       return;
     }
-    const question = QCM_QUESTIONS[questionIndex];
+    const question = qcmSessionQuestions[questionIndex];
     const isCorrect = question.correctAnswer === choice;
     const points = pointsForDifficulty(question.difficulty);
     setSelectedChoice(choice);
@@ -616,16 +671,16 @@ export default function App() {
   }
 
   function nextQuestion() {
-    if (questionIndex < QCM_QUESTIONS.length - 1) {
+    if (questionIndex < qcmSessionQuestions.length - 1) {
       setQuestionIndex((value) => value + 1);
       setSelectedChoice(null);
       return;
     }
-    setQuestionIndex(QCM_QUESTIONS.length);
+    setQuestionIndex(qcmSessionQuestions.length);
   }
 
   function leaveQcm() {
-    if (sessionCorrectCount === QCM_QUESTIONS.length) {
+    if (sessionCorrectCount === qcmSessionQuestions.length) {
       setPerfectSessions((value) => value + 1);
     }
     setView("tabs");
@@ -693,7 +748,13 @@ export default function App() {
     setCalcCompleted(true);
   }
 
-  function startShortAnswer() {
+  function startShortAnswer(subjectId?: SubjectId) {
+    const scopedExercises = subjectId
+      ? SHORT_ANSWER_EXERCISES.filter((exercise) => exercise.matiere === subjectId)
+      : SHORT_ANSWER_EXERCISES;
+    setShortSessionExercises(
+      scopedExercises.length ? scopedExercises : SHORT_ANSWER_EXERCISES
+    );
     setShortIndex(0);
     setShortAnswerText("");
     setShortFeedback(null);
@@ -706,7 +767,7 @@ export default function App() {
     if (shortSubmitted) {
       return;
     }
-    const exercise = SHORT_ANSWER_EXERCISES[shortIndex];
+    const exercise = shortSessionExercises[shortIndex];
     const answer = normalizeAnswer(shortAnswerText);
     const isCorrect = exercise.acceptedAnswers
       .map(normalizeAnswer)
@@ -735,7 +796,7 @@ export default function App() {
   }
 
   function nextShortExercise() {
-    if (shortIndex < SHORT_ANSWER_EXERCISES.length - 1) {
+    if (shortIndex < shortSessionExercises.length - 1) {
       setShortIndex((value) => value + 1);
       setShortAnswerText("");
       setShortFeedback(null);
@@ -746,7 +807,13 @@ export default function App() {
     setView("tabs");
   }
 
-  function startAnalysisDoc() {
+  function startAnalysisDoc(subjectId?: SubjectId) {
+    const scopedExercises = subjectId
+      ? ANALYSIS_EXERCISES.filter((exercise) => exercise.matiere === subjectId)
+      : ANALYSIS_EXERCISES;
+    setAnalysisSessionExercises(
+      scopedExercises.length ? scopedExercises : ANALYSIS_EXERCISES
+    );
     setAnalysisIndex(0);
     setAnalysisAnswerText("");
     setAnalysisFeedback(null);
@@ -759,7 +826,7 @@ export default function App() {
     if (analysisSubmitted) {
       return;
     }
-    const exercise = ANALYSIS_EXERCISES[analysisIndex];
+    const exercise = analysisSessionExercises[analysisIndex];
     const normalizedAnswer = normalizeAnswer(analysisAnswerText);
     const hits = exercise.expectedKeywords.filter((keyword) =>
       normalizedAnswer.includes(normalizeAnswer(keyword))
@@ -792,7 +859,7 @@ export default function App() {
   }
 
   function nextAnalysisExercise() {
-    if (analysisIndex < ANALYSIS_EXERCISES.length - 1) {
+    if (analysisIndex < analysisSessionExercises.length - 1) {
       setAnalysisIndex((value) => value + 1);
       setAnalysisAnswerText("");
       setAnalysisFeedback(null);
@@ -803,8 +870,11 @@ export default function App() {
     setView("tabs");
   }
 
-  function startAnnalesMode() {
-    setAnnalesSessionItems(ANNALES_ITEMS);
+  function startAnnalesMode(subjectId?: SubjectId) {
+    const scopedItems = subjectId
+      ? ANNALES_ITEMS.filter((item) => item.matiere === subjectId)
+      : ANNALES_ITEMS;
+    setAnnalesSessionItems(scopedItems.length ? scopedItems : ANNALES_ITEMS);
     setAnnalesIndex(0);
     setAnnalesChoice(null);
     setAnnalesTextAnswer("");
@@ -818,8 +888,12 @@ export default function App() {
     setView("annales");
   }
 
-  function startAnnalesExpertMode() {
-    const expertItems = ANNALES_ITEMS.filter((item) => item.difficulty >= 2);
+  function startAnnalesExpertMode(subjectId?: SubjectId) {
+    const expertItems = ANNALES_ITEMS.filter((item) => {
+      const difficultyOk = item.difficulty >= 2;
+      const subjectOk = subjectId ? item.matiere === subjectId : true;
+      return difficultyOk && subjectOk;
+    });
     setAnnalesSessionItems(expertItems.length ? expertItems : ANNALES_ITEMS);
     setAnnalesIndex(0);
     setAnnalesChoice(null);
@@ -923,12 +997,26 @@ export default function App() {
   }
 
   function renderQcmScreen() {
-    if (questionIndex >= QCM_QUESTIONS.length) {
+    if (!qcmSessionQuestions.length) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.h1}>QCM</Text>
+          <Text style={styles.subtitle}>
+            Aucun QCM disponible pour cette matière pour le moment.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+            <Text style={styles.secondaryButtonText}>Retour</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    if (questionIndex >= qcmSessionQuestions.length) {
       return (
         <View style={styles.centered}>
           <Text style={styles.h1}>Résultat QCM ✅</Text>
           <Text style={styles.subtitle}>
-            Score: {sessionCorrectCount}/{QCM_QUESTIONS.length}
+            Score: {sessionCorrectCount}/{qcmSessionQuestions.length}
           </Text>
           <Text style={styles.subtitle}>XP gagné: +{sessionXpEarned}</Text>
           <Pressable style={styles.primaryButton} onPress={leaveQcm}>
@@ -938,15 +1026,17 @@ export default function App() {
       );
     }
 
-    const question = QCM_QUESTIONS[questionIndex];
+    const question = qcmSessionQuestions[questionIndex];
     const isAnswered = selectedChoice !== null;
+    const subjectName =
+      SUBJECTS.find((subject) => subject.id === question.matiere)?.name ?? "Matière";
 
     return (
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.screenContent}>
-          <Text style={styles.h1}>QCM Pythagore</Text>
+          <Text style={styles.h1}>QCM • {subjectName}</Text>
           <Text style={styles.subtitle}>
-            Question {questionIndex + 1}/{QCM_QUESTIONS.length}
+            Question {questionIndex + 1}/{qcmSessionQuestions.length}
           </Text>
           <Text style={styles.subtitle}>
             Difficulté: {DIFFICULTY_LABELS[question.difficulty]} • {pointsForDifficulty(question.difficulty)} pts
@@ -955,7 +1045,7 @@ export default function App() {
             <View
               style={[
                 styles.progressFill,
-                { width: `${((questionIndex + 1) / QCM_QUESTIONS.length) * 100}%` },
+                { width: `${((questionIndex + 1) / qcmSessionQuestions.length) * 100}%` },
               ]}
             />
           </View>
@@ -1054,16 +1144,22 @@ export default function App() {
         </View>
 
         {selectedSubjectId === "maths" && (
-          <Pressable style={styles.primaryButton} onPress={startQcm}>
+          <Pressable style={styles.primaryButton} onPress={() => startQcm("maths")}>
             <Text style={styles.primaryButtonText}>Faire un QCM de Maths</Text>
           </Pressable>
         )}
 
-        <Pressable style={styles.secondaryButton} onPress={startShortAnswer}>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => startShortAnswer(selectedSubjectId)}
+        >
           <Text style={styles.secondaryButtonText}>Réponse courte</Text>
         </Pressable>
 
-        <Pressable style={styles.secondaryButton} onPress={startAnalysisDoc}>
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={() => startAnalysisDoc(selectedSubjectId)}
+        >
           <Text style={styles.secondaryButtonText}>Analyse de document</Text>
         </Pressable>
 
@@ -1176,12 +1272,25 @@ export default function App() {
   }
 
   function renderShortAnswerScreen() {
-    const exercise = SHORT_ANSWER_EXERCISES[shortIndex];
+    const exercise = shortSessionExercises[shortIndex];
+    if (!exercise) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.h1}>Réponse courte ✍️</Text>
+          <Text style={styles.subtitle}>
+            Aucun exercice disponible pour cette matière pour le moment.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+            <Text style={styles.secondaryButtonText}>Retour</Text>
+          </Pressable>
+        </View>
+      );
+    }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
         <Text style={styles.h1}>Réponse courte ✍️</Text>
         <Text style={styles.subtitle}>
-          Exercice {shortIndex + 1}/{SHORT_ANSWER_EXERCISES.length}
+          Exercice {shortIndex + 1}/{shortSessionExercises.length}
         </Text>
         <Text style={styles.subtitle}>
           Difficulté: {DIFFICULTY_LABELS[exercise.difficulty]} ({difficultyTag(exercise.difficulty)}) •{" "}
@@ -1221,12 +1330,25 @@ export default function App() {
   }
 
   function renderAnalysisDocScreen() {
-    const exercise = ANALYSIS_EXERCISES[analysisIndex];
+    const exercise = analysisSessionExercises[analysisIndex];
+    if (!exercise) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.h1}>Analyse de document 🧠</Text>
+          <Text style={styles.subtitle}>
+            Aucun exercice disponible pour cette matière pour le moment.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={() => setView("tabs")}>
+            <Text style={styles.secondaryButtonText}>Retour</Text>
+          </Pressable>
+        </View>
+      );
+    }
     return (
       <ScrollView contentContainerStyle={styles.screenContent}>
         <Text style={styles.h1}>Analyse de document 🧠</Text>
         <Text style={styles.subtitle}>
-          Exercice {analysisIndex + 1}/{ANALYSIS_EXERCISES.length}
+          Exercice {analysisIndex + 1}/{analysisSessionExercises.length}
         </Text>
         <Text style={styles.subtitle}>
           Difficulté: {DIFFICULTY_LABELS[exercise.difficulty]} ({difficultyTag(exercise.difficulty)}) •{" "}
@@ -1391,8 +1513,8 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.screenContent}>
           <View style={styles.rowBetween}>
             <View>
-              <Text style={styles.h1}>Bonjour {profile.prenom} ! 👋</Text>
-              <Text style={styles.subtitle}>Prêt pour une mini-session ?</Text>
+              <Text style={styles.h1}>BrevEt • Mode entraînement</Text>
+              <Text style={styles.subtitle}>Salut {profile.prenom}, prêt à entrer sur le parquet ?</Text>
             </View>
             <View style={styles.streakPill}>
               <Text style={styles.streakText}>🔥 {profile.streak_count}</Text>
@@ -1400,7 +1522,7 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Objectif quotidien</Text>
+            <Text style={styles.cardTitle}>Objectif du jour</Text>
             <Text style={styles.valueText}>
               {profile.xp_total} / {DAILY_XP_GOAL} XP aujourd'hui
             </Text>
@@ -1427,7 +1549,10 @@ export default function App() {
             <Pressable style={styles.primaryButton} onPress={handleDemoXP}>
               <Text style={styles.primaryButtonText}>+10 XP (démo)</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={startQcm}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => startQcm("maths")}
+            >
               <Text style={styles.secondaryButtonText}>Lancer QCM Maths</Text>
             </Pressable>
           </View>
@@ -1438,7 +1563,7 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Continuer</Text>
+            <Text style={styles.cardTitle}>Continue ta saison</Text>
             {SUBJECTS.map((subject) => (
               <Pressable
                 key={subject.id}
@@ -1454,7 +1579,7 @@ export default function App() {
           </View>
 
           <View style={styles.breviCard}>
-            <Text style={styles.breviText}>🦉 {encouragement}</Text>
+            <Text style={styles.breviText}>🦉 {encouragement} 🏀</Text>
           </View>
         </ScrollView>
       );
@@ -1494,24 +1619,98 @@ export default function App() {
     if (activeTab === "defis") {
       return (
         <View style={styles.centered}>
-          <Text style={styles.h1}>Défis 🏆</Text>
-          <Text style={styles.subtitle}>Modes annales et entraînements avancés :</Text>
-          <Pressable style={styles.primaryButton} onPress={startQcm}>
+          <Text style={styles.h1}>Défis Annales 🏀</Text>
+          <Text style={styles.subtitle}>Mode mixte, expert, et entraînements avancés :</Text>
+          <View style={styles.filterWrap}>
+            <Pressable
+              style={[
+                styles.filterChip,
+                defiSubjectFilter === "mixte" && styles.filterChipActive,
+              ]}
+              onPress={() => setDefiSubjectFilter("mixte")}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  defiSubjectFilter === "mixte" && styles.filterChipTextActive,
+                ]}
+              >
+                Mixte
+              </Text>
+            </Pressable>
+            {SUBJECTS.map((subject) => (
+              <Pressable
+                key={`defi-${subject.id}`}
+                style={[
+                  styles.filterChip,
+                  defiSubjectFilter === subject.id && styles.filterChipActive,
+                ]}
+                onPress={() => setDefiSubjectFilter(subject.id)}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    defiSubjectFilter === subject.id && styles.filterChipTextActive,
+                  ]}
+                >
+                  {subject.icon} {subject.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() =>
+              startQcm(
+                defiSubjectFilter === "mixte"
+                  ? "maths"
+                  : (defiSubjectFilter as SubjectId)
+              )
+            }
+          >
             <Text style={styles.primaryButtonText}>QCM du jour</Text>
           </Pressable>
           <Pressable style={styles.secondaryButton} onPress={startCalcul}>
             <Text style={styles.secondaryButtonText}>Calcul guidé</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={startShortAnswer}>
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() =>
+              startShortAnswer(
+                defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
+              )
+            }
+          >
             <Text style={styles.secondaryButtonText}>Réponse courte</Text>
           </Pressable>
-          <Pressable style={styles.secondaryButton} onPress={startAnalysisDoc}>
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() =>
+              startAnalysisDoc(
+                defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
+              )
+            }
+          >
             <Text style={styles.secondaryButtonText}>Analyse de document</Text>
           </Pressable>
-          <Pressable style={styles.primaryButton} onPress={startAnnalesMode}>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() =>
+              startAnnalesMode(
+                defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
+              )
+            }
+          >
             <Text style={styles.primaryButtonText}>Mini mode Annales (mixte)</Text>
           </Pressable>
-          <Pressable style={styles.primaryButton} onPress={startAnnalesExpertMode}>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() =>
+              startAnnalesExpertMode(
+                defiSubjectFilter === "mixte" ? undefined : defiSubjectFilter
+              )
+            }
+          >
             <Text style={styles.primaryButtonText}>Mode Expert Annales (difficile)</Text>
           </Pressable>
         </View>
@@ -1580,7 +1779,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.content}>
         <View style={styles.contentInner}>
           {view === "tabs" && renderScreen()}
@@ -1599,7 +1798,7 @@ export default function App() {
             return (
               <Pressable
                 key={item.key}
-                style={styles.tabItem}
+                style={[styles.tabItem, active && styles.tabItemActive]}
                 onPress={() => setActiveTab(item.key)}
               >
                 <Text style={[styles.tabIcon, active && styles.tabIconActive]}>{item.icon}</Text>
@@ -1614,7 +1813,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#EEF3FF" },
+  root: { flex: 1, backgroundColor: "#111111" },
   content: { flex: 1 },
   contentInner: {
     flex: 1,
@@ -1630,9 +1829,9 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
-  loadingText: { fontSize: 16, color: "#667085" },
-  h1: { fontSize: 28, fontWeight: "800", color: "#102A71" },
-  subtitle: { fontSize: 15, color: "#42526B", lineHeight: 20 },
+  loadingText: { fontSize: 16, color: "#D0D4DE" },
+  h1: { fontSize: 28, fontWeight: "800", color: "#FF7A00" },
+  subtitle: { fontSize: 15, color: "#D8DCE6", lineHeight: 20 },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1640,65 +1839,67 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   streakPill: {
-    backgroundColor: "#FFF4D8",
+    backgroundColor: "#1E1E1E",
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: "#FFE4A8",
+    borderColor: "#FF7A00",
   },
-  streakText: { fontWeight: "800", color: "#B25D00" },
+  streakText: { fontWeight: "800", color: "#FF7A00" },
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#171717",
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#E4EAF8",
-    shadowColor: "#1A2A4D",
-    shadowOpacity: 0.08,
+    borderColor: "#2B2B2B",
+    shadowColor: "#000000",
+    shadowOpacity: 0.24,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 3,
     gap: 10,
   },
-  cardTitle: { fontSize: 16, fontWeight: "800", color: "#13337A" },
-  valueText: { fontSize: 14, color: "#2D3A4A", fontWeight: "700" },
+  cardTitle: { fontSize: 16, fontWeight: "800", color: "#F8F5EF" },
+  valueText: { fontSize: 14, color: "#ECEFF5", fontWeight: "700" },
   progressBg: {
     width: "100%",
     height: 11,
     borderRadius: 999,
-    backgroundColor: "#DFE8FA",
+    backgroundColor: "#2E323A",
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
     borderRadius: 999,
-    backgroundColor: "#4FBF1B",
+    backgroundColor: "#FF7A00",
   },
   primaryButton: {
-    backgroundColor: "#103A9B",
+    backgroundColor: "#FF7A00",
     borderRadius: 12,
     alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    shadowColor: "#103A9B",
+    borderWidth: 1,
+    borderColor: "#FF9A3E",
+    shadowColor: "#000000",
     shadowOpacity: 0.24,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  primaryButtonText: { color: "#fff", fontWeight: "800" },
+  primaryButtonText: { color: "#111111", fontWeight: "800" },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: "#1E4CB2",
+    borderColor: "#FF7A00",
     borderRadius: 12,
     alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "#F7FAFF",
+    backgroundColor: "#101010",
   },
-  secondaryButtonText: { color: "#1A48AA", fontWeight: "800" },
-  bigNumber: { fontSize: 44, fontWeight: "800", color: "#123684" },
+  secondaryButtonText: { color: "#FF7A00", fontWeight: "800" },
+  bigNumber: { fontSize: 44, fontWeight: "800", color: "#FF7A00" },
   subjectRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1706,18 +1907,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 2,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEF3FF",
+    borderBottomColor: "#2B2B2B",
   },
-  subjectLabel: { fontSize: 14, color: "#1F2B3D", fontWeight: "700" },
-  subjectPercent: { fontSize: 14, fontWeight: "800", color: "#123684" },
+  subjectLabel: { fontSize: 14, color: "#F8F5EF", fontWeight: "700" },
+  subjectPercent: { fontSize: 14, fontWeight: "800", color: "#FF7A00" },
   breviCard: {
-    backgroundColor: "#E7F0FF",
+    backgroundColor: "#0F2A6B",
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#D8E7FF",
+    borderColor: "#244B9A",
   },
-  breviText: { fontSize: 16, color: "#103A9B", fontWeight: "800" },
+  breviText: { fontSize: 16, color: "#F8F5EF", fontWeight: "800" },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1726,33 +1927,33 @@ const styles = StyleSheet.create({
   },
   subjectCard: {
     width: "48%",
-    backgroundColor: "#fff",
+    backgroundColor: "#171717",
     borderRadius: 18,
     padding: 14,
     gap: 8,
     borderWidth: 1,
-    borderColor: "#E5ECFA",
-    shadowColor: "#16274B",
-    shadowOpacity: 0.07,
+    borderColor: "#2B2B2B",
+    shadowColor: "#000000",
+    shadowOpacity: 0.22,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   subjectEmoji: { fontSize: 24 },
-  subjectName: { fontSize: 14, fontWeight: "800", color: "#1D2A3E" },
+  subjectName: { fontSize: 14, fontWeight: "800", color: "#F8F5EF" },
   pressedScale: {
     transform: [{ scale: 0.98 }],
   },
   chapterRow: {
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEF1F7",
+    borderBottomColor: "#2B2B2B",
   },
   tabBar: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: "#DDE6F8",
-    backgroundColor: "#F8FBFF",
+    borderTopColor: "#2A2A2A",
+    backgroundColor: "#111111",
     paddingVertical: 9,
   },
   tabItem: {
@@ -1760,56 +1961,92 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 3,
+    marginHorizontal: 6,
+    borderRadius: 999,
+    paddingVertical: 6,
   },
-  tabIcon: { fontSize: 18, color: "#9CA9C4" },
-  tabIconActive: { color: "#103A9B" },
-  tabLabel: { fontSize: 11, color: "#9CA9C4", fontWeight: "700" },
-  tabLabelActive: { color: "#103A9B" },
+  tabItemActive: {
+    backgroundColor: "#2A1806",
+    borderWidth: 1,
+    borderColor: "#FF7A00",
+  },
+  tabIcon: { fontSize: 18, color: "#8F98AB" },
+  tabIconActive: { color: "#FF7A00" },
+  tabLabel: { fontSize: 11, color: "#8F98AB", fontWeight: "700" },
+  tabLabelActive: { color: "#FF7A00" },
   choiceButton: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#D5DEEE",
-    backgroundColor: "#fff",
+    borderColor: "#3A3A3A",
+    backgroundColor: "#151515",
     padding: 12,
     marginTop: 8,
   },
-  choiceDefault: { backgroundColor: "#fff" },
+  choiceDefault: { backgroundColor: "#151515" },
   choiceCorrect: {
-    backgroundColor: "#E9F9DF",
-    borderColor: "#58CC02",
+    backgroundColor: "#1A3320",
+    borderColor: "#3FAF5B",
   },
   choiceWrong: {
-    backgroundColor: "#FFE5E5",
-    borderColor: "#FF4B4B",
+    backgroundColor: "#351E1E",
+    borderColor: "#E5383B",
   },
-  choiceText: { color: "#1A1A1A", fontWeight: "600" },
+  choiceText: { color: "#F8F5EF", fontWeight: "600" },
   feedbackBar: {
     borderTopWidth: 1,
-    borderTopColor: "#DCE6FA",
-    backgroundColor: "#F8FBFF",
+    borderTopColor: "#2A2A2A",
+    backgroundColor: "#121212",
     padding: 14,
     gap: 8,
   },
-  feedbackText: { fontSize: 16, fontWeight: "800", color: "#123684" },
-  feedbackHint: { fontSize: 14, color: "#34455C", lineHeight: 20 },
+  feedbackText: { fontSize: 16, fontWeight: "800", color: "#FF7A00" },
+  feedbackHint: { fontSize: 14, color: "#D8DCE6", lineHeight: 20 },
   feedbackButton: {
     marginTop: 4,
-    backgroundColor: "#103A9B",
+    backgroundColor: "#FF7A00",
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: "center",
   },
-  feedbackButtonText: { color: "#fff", fontWeight: "700" },
+  feedbackButtonText: { color: "#111111", fontWeight: "800" },
   input: {
     borderWidth: 1,
-    borderColor: "#D7E2F6",
+    borderColor: "#3A3A3A",
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: "#fff",
+    backgroundColor: "#101010",
+    color: "#F8F5EF",
   },
   textArea: {
     minHeight: 100,
     textAlignVertical: "top",
+  },
+  filterWrap: {
+    width: "100%",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: "#424242",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#111111",
+  },
+  filterChipActive: {
+    backgroundColor: "#FF7A00",
+    borderColor: "#FF7A00",
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: "#F8F5EF",
+    fontWeight: "700",
+  },
+  filterChipTextActive: {
+    color: "#111111",
   },
 });
