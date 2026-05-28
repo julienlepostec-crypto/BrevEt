@@ -48,6 +48,7 @@ const CONFETTI_PARTICLES = [
 
 type TabKey = "accueil" | "matieres" | "defis" | "progres" | "profil";
 type DefiSubjectFilter = SubjectId | "mixte";
+type ThemeId = "hall-of-fame" | "minimal-dark" | "neon-court";
 type AppView =
   | "tabs"
   | "qcm"
@@ -153,6 +154,23 @@ type MistakeRow = {
   subjectId: SubjectId;
   label: string;
   createdAt: string;
+};
+
+type ThemePack = {
+  id: ThemeId;
+  label: string;
+  palette: {
+    root: string;
+    card: string;
+    cardBorder: string;
+    accent: string;
+    text: string;
+    subText: string;
+    buttonText: string;
+  };
+  muralTitle: string;
+  muralHint: string;
+  muralSymbols: string;
 };
 
 const SUBJECTS: Subject[] = [
@@ -436,6 +454,10 @@ const ANNALES_ITEMS: AnnalesItem[] = [
 ];
 
 const SESSION_RESUME_KEY = "active_training_session_v1";
+const THEME_META_KEY = "theme_pack_v1";
+const ONBOARDING_META_KEY = "onboarding_complete_v1";
+const ONBOARDING_NAME_KEY = "onboarding_name_v1";
+const ONBOARDING_SUBJECT_KEY = "onboarding_subject_v1";
 const INPUT_PLACEHOLDER_COLOR = "#8F98AB";
 const SUBJECT_LABEL_BY_ID: Record<SubjectId, string> = {
   maths: "Mathématiques",
@@ -487,6 +509,57 @@ const EXERCISE_CATALOG: Record<number, ExerciseCatalogEntry> = (() => {
   };
   return entries;
 })();
+
+const THEME_PACKS: Record<ThemeId, ThemePack> = {
+  "hall-of-fame": {
+    id: "hall-of-fame",
+    label: "Hall of Fame",
+    palette: {
+      root: "#0D0D0D",
+      card: "#161616",
+      cardBorder: "#2E2E2E",
+      accent: "#FF7A00",
+      text: "#F8F5EF",
+      subText: "#E2E6EE",
+      buttonText: "#111111",
+    },
+    muralTitle: "Wall of Legends",
+    muralHint: "Version stylisée sans visages (silhouettes/licence-safe).",
+    muralSymbols: "🏀 23 • 24 • 32 • 33 • 34 • 30",
+  },
+  "minimal-dark": {
+    id: "minimal-dark",
+    label: "Minimal Dark",
+    palette: {
+      root: "#101114",
+      card: "#171A20",
+      cardBorder: "#2A2F38",
+      accent: "#7CB7FF",
+      text: "#EEF2F8",
+      subText: "#C4CFDE",
+      buttonText: "#0D1626",
+    },
+    muralTitle: "Focus Mode",
+    muralHint: "Aucun bruit visuel, maximal concentration.",
+    muralSymbols: "◼ ◻ ◼ ◻",
+  },
+  "neon-court": {
+    id: "neon-court",
+    label: "Neon Court",
+    palette: {
+      root: "#0C1018",
+      card: "#11192A",
+      cardBorder: "#213756",
+      accent: "#28E1FF",
+      text: "#EAFBFF",
+      subText: "#B8E7F3",
+      buttonText: "#04222C",
+    },
+    muralTitle: "Neon Arena",
+    muralHint: "Ambiance night game, contraste élevé.",
+    muralSymbols: "⚡ 🏀 ⚡ 🏀 ⚡",
+  },
+};
 
 function getRecencyWeight(createdAt: string): number {
   const date = new Date(createdAt).getTime();
@@ -680,6 +753,10 @@ export default function App() {
   const [recentMistakes, setRecentMistakes] = useState<MistakeRow[]>([]);
   const [eventStats, setEventStats] = useState<Record<string, number>>({});
   const [resumeSuggestion, setResumeSuggestion] = useState<string | null>(null);
+  const [themeId, setThemeId] = useState<ThemeId>("hall-of-fame");
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingName, setOnboardingName] = useState("");
+  const [onboardingSubject, setOnboardingSubject] = useState<SubjectId>("maths");
   const questionCardAnim = useRef(new Animated.Value(1)).current;
   const qcmFeedbackAnim = useRef(new Animated.Value(0)).current;
   const pulseButtonAnim = useRef(new Animated.Value(1)).current;
@@ -691,6 +768,7 @@ export default function App() {
   const activeTabPulseAnim = useRef(new Animated.Value(1)).current;
   const successFlashAnim = useRef(new Animated.Value(0)).current;
   const [xpProgressDisplay, setXpProgressDisplay] = useState(0);
+  const themePack = THEME_PACKS[themeId];
 
   const successRate = totalAttempts
     ? Math.round((correctAttempts / totalAttempts) * 100)
@@ -918,6 +996,29 @@ export default function App() {
     setView("tabs");
   }
 
+  async function applyTheme(nextTheme: ThemeId) {
+    setThemeId(nextTheme);
+    await setMetaValue(THEME_META_KEY, nextTheme);
+    await logEvent("theme_changed", { theme: nextTheme });
+    await refreshEventStats();
+  }
+
+  async function completeOnboarding() {
+    const trimmedName = onboardingName.trim();
+    const finalName = trimmedName.length > 0 ? trimmedName : profile?.prenom ?? "Champion";
+    setProfile((current) => (current ? { ...current, prenom: finalName } : current));
+    setSelectedSubjectId(onboardingSubject);
+    await Promise.all([
+      setMetaValue(ONBOARDING_META_KEY, "1"),
+      setMetaValue(ONBOARDING_NAME_KEY, finalName),
+      setMetaValue(ONBOARDING_SUBJECT_KEY, onboardingSubject),
+      setMetaValue(THEME_META_KEY, themeId),
+      logEvent("onboarding_completed", { theme: themeId, subject: onboardingSubject }),
+    ]);
+    await refreshEventStats();
+    setShowOnboarding(false);
+  }
+
   function handleTopBackPress() {
     if (view === "matiere-detail") {
       setView("tabs");
@@ -941,6 +1042,38 @@ export default function App() {
       setProfile(user);
       await refreshAttemptStats();
       await refreshEventStats();
+      const [savedTheme, onboardingDone, savedName, savedSubject] = await Promise.all([
+        getMetaValue(THEME_META_KEY),
+        getMetaValue(ONBOARDING_META_KEY),
+        getMetaValue(ONBOARDING_NAME_KEY),
+        getMetaValue(ONBOARDING_SUBJECT_KEY),
+      ]);
+      if (
+        savedTheme &&
+        (savedTheme === "hall-of-fame" ||
+          savedTheme === "minimal-dark" ||
+          savedTheme === "neon-court")
+      ) {
+        setThemeId(savedTheme);
+      }
+      if (savedName && savedName.trim().length > 0) {
+        setOnboardingName(savedName.trim());
+        setProfile((current) => (current ? { ...current, prenom: savedName.trim() } : current));
+      } else {
+        setOnboardingName(user.prenom);
+      }
+      if (
+        savedSubject &&
+        (savedSubject === "maths" ||
+          savedSubject === "fr" ||
+          savedSubject === "hg" ||
+          savedSubject === "physique" ||
+          savedSubject === "svt")
+      ) {
+        setOnboardingSubject(savedSubject);
+        setSelectedSubjectId(savedSubject);
+      }
+      setShowOnboarding(onboardingDone !== "1");
       const resumeRaw = await getMetaValue(SESSION_RESUME_KEY);
       if (resumeRaw) {
         try {
@@ -2081,12 +2214,43 @@ export default function App() {
     if (activeTab === "accueil") {
       return (
         <ScrollView contentContainerStyle={styles.screenContent}>
+          <View
+            style={[
+              styles.muralCard,
+              {
+                backgroundColor: themePack.palette.card,
+                borderColor: themePack.palette.cardBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.muralTitle, { color: themePack.palette.accent }]}>
+              {themePack.muralTitle}
+            </Text>
+            <Text style={[styles.muralHint, { color: themePack.palette.subText }]}>
+              {themePack.muralHint}
+            </Text>
+            <Text style={[styles.muralSymbols, { color: themePack.palette.text }]}>
+              {themePack.muralSymbols}
+            </Text>
+          </View>
           <View style={styles.rowBetween}>
             <View>
-              <Text style={styles.h1}>BrevEt • Mode entraînement</Text>
-              <Text style={styles.subtitle}>Salut {profile.prenom}, prêt à entrer sur le parquet ?</Text>
+              <Text style={[styles.h1, { color: themePack.palette.accent }]}>
+                BrevEt • Mode entraînement
+              </Text>
+              <Text style={[styles.subtitle, { color: themePack.palette.subText }]}>
+                Salut {profile.prenom}, prêt à entrer sur le parquet ?
+              </Text>
             </View>
-            <Animated.View style={[styles.streakPill, { transform: [{ scale: streakPulseAnim }] }]}>
+            <Animated.View
+              style={[
+                styles.streakPill,
+                {
+                  transform: [{ scale: streakPulseAnim }],
+                  borderColor: themePack.palette.accent,
+                },
+              ]}
+            >
               <Text style={styles.streakText}>🔥 {profile.streak_count}</Text>
             </Animated.View>
           </View>
@@ -2391,21 +2555,84 @@ export default function App() {
     }
 
     return (
-      <View style={styles.centered}>
-        <Text style={styles.h1}>Profil ⚙️</Text>
-        <Text style={styles.subtitle}>Avatar: {profile.avatar}</Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.screenContent}>
+        <Text style={[styles.h1, { color: themePack.palette.accent }]}>Profil ⚙️</Text>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: themePack.palette.card,
+              borderColor: themePack.palette.cardBorder,
+            },
+          ]}
+        >
+          <Text style={styles.cardTitle}>Avatar: {profile.avatar}</Text>
+          <Text style={[styles.subtitle, { color: themePack.palette.subText }]}>
+            Prénom: {profile.prenom}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: themePack.palette.card,
+              borderColor: themePack.palette.cardBorder,
+            },
+          ]}
+        >
+          <Text style={styles.cardTitle}>Skins / Thèmes</Text>
+          {(["hall-of-fame", "minimal-dark", "neon-court"] as ThemeId[]).map((id) => (
+            <Pressable
+              key={id}
+              style={[
+                styles.choiceButton,
+                id === themeId ? styles.filterChipActive : styles.choiceDefault,
+                {
+                  borderColor: id === themeId ? themePack.palette.accent : themePack.palette.cardBorder,
+                },
+              ]}
+              onPress={() => void applyTheme(id)}
+            >
+              <Text
+                style={[
+                  styles.choiceText,
+                  id === themeId && { color: themePack.palette.buttonText },
+                ]}
+              >
+                {THEME_PACKS[id].label}
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable
+            style={[styles.secondaryButton, { borderColor: themePack.palette.accent }]}
+            onPress={() => setShowOnboarding(true)}
+          >
+            <Text style={[styles.secondaryButtonText, { color: themePack.palette.accent }]}>
+              Relancer onboarding
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={[styles.root, { backgroundColor: themePack.palette.root }]}>
       <StatusBar style="light" />
       <View style={styles.content}>
         {view !== "tabs" && (
           <View style={styles.topNavBar}>
-            <Pressable style={styles.topNavBackButton} onPress={handleTopBackPress}>
-              <Text style={styles.topNavBackText}>← Retour</Text>
+            <Pressable
+              style={[
+                styles.topNavBackButton,
+                { borderColor: themePack.palette.accent },
+              ]}
+              onPress={handleTopBackPress}
+            >
+              <Text style={[styles.topNavBackText, { color: themePack.palette.accent }]}>
+                ← Retour
+              </Text>
             </Pressable>
           </View>
         )}
@@ -2514,6 +2741,71 @@ export default function App() {
           </Animated.Text>
         ))}
       </View>
+      {showOnboarding && (
+        <View style={styles.onboardingOverlay}>
+          <View
+            style={[
+              styles.onboardingCard,
+              { backgroundColor: themePack.palette.card, borderColor: themePack.palette.cardBorder },
+            ]}
+          >
+            <Text style={[styles.h1, { color: themePack.palette.accent }]}>Bienvenue sur BrevEt</Text>
+            <Text style={[styles.subtitle, { color: themePack.palette.subText }]}>
+              Personnalise ton expérience de révision pour démarrer fort.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={onboardingName}
+              onChangeText={setOnboardingName}
+              placeholder="Ton prénom"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+              keyboardAppearance="dark"
+            />
+            <Text style={[styles.cardTitle, { marginTop: 4 }]}>Matière prioritaire</Text>
+            <View style={styles.filterWrap}>
+              {SUBJECTS.map((subject) => (
+                <Pressable
+                  key={`onboard-${subject.id}`}
+                  style={[
+                    styles.filterChip,
+                    onboardingSubject === subject.id && styles.filterChipActive,
+                  ]}
+                  onPress={() => setOnboardingSubject(subject.id)}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      onboardingSubject === subject.id && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {subject.icon} {subject.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={[styles.cardTitle, { marginTop: 6 }]}>Style visuel</Text>
+            <View style={styles.filterWrap}>
+              {(["hall-of-fame", "minimal-dark", "neon-court"] as ThemeId[]).map((id) => (
+                <Pressable
+                  key={`theme-${id}`}
+                  style={[styles.filterChip, themeId === id && styles.filterChipActive]}
+                  onPress={() => setThemeId(id)}
+                >
+                  <Text style={[styles.filterChipText, themeId === id && styles.filterChipTextActive]}>
+                    {THEME_PACKS[id].label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={[styles.primaryButton, { marginTop: 10, alignSelf: "stretch" }]}
+              onPress={() => void completeOnboarding()}
+            >
+              <Text style={styles.primaryButtonText}>Commencer ma session</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -2545,6 +2837,25 @@ const styles = StyleSheet.create({
     color: "#FF7A00",
     fontWeight: "800",
     fontSize: 15,
+  },
+  muralCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    gap: 6,
+  },
+  muralTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  muralHint: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  muralSymbols: {
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
   contentInner: {
     flex: 1,
@@ -2817,5 +3128,21 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#FF7A00",
     zIndex: 20,
+  },
+  onboardingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(7,9,12,0.86)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+    zIndex: 60,
+  },
+  onboardingCard: {
+    width: "100%",
+    maxWidth: 620,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 18,
+    gap: 12,
   },
 });
